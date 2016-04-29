@@ -250,6 +250,7 @@
 *.user
 *.idb
 *.pdb
+*.ilk
 /Debug/
 /Release/
 /.vagrant/
