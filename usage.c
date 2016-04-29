@@ -15,7 +15,11 @@ void vreportf(const char *prefix, const char *err, va_list params)
 
 	fflush(fh);
 	if (!tweaked_error_buffering) {
+#ifdef _MSC_VER
+		setvbuf(fh, NULL, _IONBF, 0);
+#else
 		setvbuf(fh, NULL, _IOLBF, 0);
+#endif
 		tweaked_error_buffering = 1;
 	}
 
