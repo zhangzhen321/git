@@ -2043,6 +2043,7 @@ _git_config ()
 		core.fileMode
 		core.fsyncobjectfiles
 		core.gitProxy
+		core.gvfs
 		core.ignoreStat
 		core.ignorecase
 		core.logAllRefUpdates
