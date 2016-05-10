@@ -10,6 +10,7 @@
 #include "attr.h"
 #include "split-index.h"
 #include "dir.h"
+#include "gvfs.h"
 
 /*
  * Error messages expected by scripts out of plumbing commands such as
@@ -955,6 +956,19 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 		if (prefix->len && strncmp(ce->name, prefix->buf, prefix->len))
 			break;
 
+		/*
+		 * if we have an excludes hashmap use it instead of the expensive testing
+		 */
+		if (el->pattern_hash.size) {
+			struct exclude e;
+			hashmap_entry_init(&e, strhash(ce->name));
+			e.pattern = ce->name;
+			if (hashmap_get(&el->pattern_hash, &e, NULL))
+				ce->ce_flags &= ~clear_mask;
+			cache++;
+			continue;
+		}
+
 		name = ce->name + prefix->len;
 		slash = strchr(name, '/');
 
@@ -1013,6 +1027,12 @@ static int clear_ce_flags(struct cache_entry **cache, int nr,
 				el, 0);
 }
 
+
+static int pattern_cmp(const struct exclude *e1, const struct exclude *e2, const void *unused)
+{
+	return strcmp(e1->pattern, e2->pattern);
+}
+
 /*
  * Set/Clear CE_NEW_SKIP_WORKTREE according to $GIT_DIR/info/sparse-checkout
  */
@@ -1036,6 +1056,19 @@ static void mark_new_skip_worktree(struct exclude_list *el,
 			ce->ce_flags |= skip_wt_flag;
 		else
 			ce->ce_flags &= ~skip_wt_flag;
+	}
+
+	/* Initialize the hashmap only if requested */
+	/* use el->pattern_hash.cmpfn as a flag to see if we get can reuse the old hashmap */
+	if (gvfs_config_is_set(GVFS_SPARSE_HASHMAP) && el->nr && !el->pattern_hash.cmpfn) {
+
+		hashmap_init(&el->pattern_hash, (hashmap_cmp_fn)pattern_cmp, el->nr);
+
+		for (i = el->nr - 1; 0 <= i; i--) {
+			struct exclude *x = el->excludes[i];
+			hashmap_entry_init(&x->ent, strhash(x->pattern));
+			hashmap_add(&el->pattern_hash, &x->ent);
+		}
 	}
 
 	/*
