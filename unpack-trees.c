@@ -956,11 +956,28 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 		if (prefix->len && strncmp(ce->name, prefix->buf, prefix->len))
 			break;
 
-		/*
-		 * if we have an excludes hashmap use it instead of the expensive testing
-		 */
+		/* if we have an excludes hashmap use it */
 		if (el->pattern_hash.size) {
 			struct exclude e;
+
+			slash = strrchr(ce->name, '/');
+
+			/* If it's a directory, try whole directory match first */
+			if (slash) {
+				len = slash - ce->name;
+				hashmap_entry_init(&e, memhash(ce->name, len));
+				e.pattern = ce->name;
+				e.patternlen = len;
+				if (hashmap_get(&el->pattern_hash, &e, NULL))
+				{
+					/* TODO optimize here by looping through all other cache entries in this directory */
+					ce->ce_flags &= ~clear_mask;
+					cache++;
+					continue;
+				}
+			}
+
+			/* Non-directory */
 			hashmap_entry_init(&e, strhash(ce->name));
 			e.pattern = ce->name;
 			if (hashmap_get(&el->pattern_hash, &e, NULL))
@@ -1030,7 +1047,7 @@ static int clear_ce_flags(struct cache_entry **cache, int nr,
 
 static int pattern_cmp(const struct exclude *e1, const struct exclude *e2, const void *unused)
 {
-	return strcmp(e1->pattern, e2->pattern);
+	return strncmp(e1->pattern, e2->pattern, e1->patternlen);
 }
 
 /*

@@ -765,7 +765,7 @@ core.gvfs::
 	GVFS_SPARSE_HASHMAP::
 		Bit value 2
 		Changes sparse-checkout to use a hashmap to speed up lookups.
-		Only works with pathnames (no wildcards, negatives, directories, etc).
+		Only works with pathnames and directories (no wildcards, negatives, tokens, etc).
 --
 
 core.sparseCheckout::
