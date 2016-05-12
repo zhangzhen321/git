@@ -756,7 +756,9 @@ This setting defaults to "refs/notes/commits", and it can be overridden by
 the 'GIT_NOTES_REF' environment variable.  See linkgit:git-notes[1].
 
 core.gvfs::
-	Changes required for GVFS.
+	Enable the features needed for GVFS.  This value can be set to true
+	to indicate all features should be turned on or the bit values listed
+	below can be used to turn on specific features.
 +
 --
 	GVFS_SKIP_SHA_ON_INDEX_READ::
@@ -765,7 +767,7 @@ core.gvfs::
 	GVFS_SPARSE_HASHMAP::
 		Bit value 2
 		Changes sparse-checkout to use a hashmap to speed up lookups.
-		Only works with pathnames (no wildcards, negatives, directories, etc).
+		Only works with pathnames and directories (no wildcards, negatives, tokens, etc).
 --
 
 core.sparseCheckout::

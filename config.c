@@ -13,6 +13,7 @@
 #include "hashmap.h"
 #include "string-list.h"
 #include "utf8.h"
+#include "gvfs.h"
 
 struct config_source {
 	struct config_source *prev;
@@ -893,7 +894,7 @@ static int git_default_core_config(const char *var, const char *value)
 	}
 
 	if (!strcmp(var, "core.gvfs")) {
-		core_gvfs = git_config_int(var, value);
+		gvfs_load_config_value(value);
 		return 0;
 	}
 
