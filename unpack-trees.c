@@ -958,16 +958,32 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 
 		/* if we have an excludes hashmap use it */
 		if (el->pattern_hash.size) {
+			static struct strbuf sb = STRBUF_INIT;
 			struct exclude e;
 
-			slash = strrchr(ce->name, '/');
+			/* Check straight mapping */
+			strbuf_reset(&sb);
+			strbuf_addch(&sb, '/');
+			strbuf_add(&sb, ce->name, ce->ce_namelen);
+			hashmap_entry_init(&e, memhash(sb.buf, sb.len));
+			e.pattern = sb.buf;
+			e.patternlen = sb.len;
+			if (hashmap_get(&el->pattern_hash, &e, NULL)) {
+				ce->ce_flags &= ~clear_mask;
+				cache++;
+				continue;
+			}
 
-			/* If it's a directory, try whole directory match first */
+			/* check to see if it matches a directory (ie /dir/) */
+			/* note, the excludes logic trims off any trailing '/' */
+			slash = strrchr(ce->name, '/');
 			if (slash) {
-				len = slash - ce->name;
-				hashmap_entry_init(&e, memhash(ce->name, len));
-				e.pattern = ce->name;
-				e.patternlen = len;
+				strbuf_reset(&sb);
+				strbuf_addch(&sb, '/');
+				strbuf_add(&sb, ce->name, slash - ce->name);
+				hashmap_entry_init(&e, memhash(sb.buf, sb.len));
+				e.pattern = sb.buf;
+				e.patternlen = sb.len;
 				if (hashmap_get(&el->pattern_hash, &e, NULL))
 				{
 					/* TODO optimize here by looping through all other cache entries in this directory */
@@ -977,14 +993,24 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 				}
 			}
 
-			/* Non-directory */
-			hashmap_entry_init(&e, strhash(ce->name));
-			e.pattern = ce->name;
+			/* check for shell globs with no wild cards (.gitignore, .gitattributes) */
+			strbuf_reset(&sb);
+			if (slash)
+				strbuf_addstr(&sb, slash+1);
+			else
+				strbuf_add(&sb, ce->name, ce->ce_namelen);
+			hashmap_entry_init(&e, memhash(sb.buf, sb.len));
+			e.pattern = sb.buf;
+			e.patternlen = sb.len;
 			if (hashmap_get(&el->pattern_hash, &e, NULL))
 				ce->ce_flags &= ~clear_mask;
+
 			cache++;
 			continue;
 		}
+
+		if (prefix->len && strncmp(ce->name, prefix->buf, prefix->len))
+			break;
 
 		name = ce->name + prefix->len;
 		slash = strchr(name, '/');
