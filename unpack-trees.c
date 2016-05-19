@@ -953,9 +953,6 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 			continue;
 		}
 
-		if (prefix->len && strncmp(ce->name, prefix->buf, prefix->len))
-			break;
-
 		/* if we have an excludes hashmap use it */
 		if (el->pattern_hash.size) {
 			static struct strbuf sb = STRBUF_INIT;
