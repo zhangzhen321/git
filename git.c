@@ -302,6 +302,55 @@ static int handle_alias(int *argcp, const char ***argv)
 	return ret;
 }
 
+/*
+ * Runs pre/post-command hook.
+ */
+struct argv_array sargv = ARGV_ARRAY_INIT;
+static void post_command_hook_atexit(void)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	const char *hook = find_hook("post-command");
+
+	if (hook) {
+		argv_array_push(&cp.args, hook);
+		argv_array_pushv(&cp.args, sargv.argv);
+		run_command(&cp);
+	}
+
+	argv_array_clear(&sargv);
+}
+
+static int run_pre_command_hook(const char **argv)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	const char *hook;
+	int ret = 0;
+
+	/*
+	 * Ensure the global pre/post command hook is only called for
+	 * the outer command and not when git is called recursively
+	 */
+	if (getenv("COMMAND_HOOK_LOCK"))
+		return 0;
+
+	hook = find_hook("pre-command");
+	if (hook) {
+		argv_array_push(&cp.args, hook);
+		argv_array_pushv(&cp.args, argv);
+
+		ret = run_command(&cp);
+		trace_printf("pre command hook for:%s returned:%d\n", argv[0], ret);
+	}
+
+	// only call the post_command hook if the pre_command hook succeeds
+	if (!ret) {
+		argv_array_pushv(&sargv, argv);
+		atexit(post_command_hook_atexit);
+	}
+
+	return ret;
+}
+
 #define RUN_SETUP		(1<<0)
 #define RUN_SETUP_GENTLY	(1<<1)
 #define USE_PAGER		(1<<2)
@@ -346,6 +395,9 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 
 	if (!help && p->option & NEED_WORK_TREE)
 		setup_work_tree();
+
+	if (run_pre_command_hook(argv))
+		die("pre-command hook aborted command");
 
 	trace_argv_printf(argv, "trace: built-in: git");
 
@@ -559,6 +611,9 @@ static void execv_dashed_external(const char **argv)
 	 */
 	tmp = argv[0];
 	argv[0] = cmd.buf;
+
+	if (run_pre_command_hook(argv))
+		die("pre-command hook aborted command");
 
 	trace_argv_printf(argv, "trace: exec:");
 

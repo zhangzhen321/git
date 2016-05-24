@@ -265,6 +265,13 @@ static int wait_or_whine(pid_t pid, const char *argv0, int in_signal)
 	return code;
 }
 
+const char **prepare_env(struct argv_array *out, const char *const *argv)
+{
+	argv_array_push(out, "COMMAND_HOOK_LOCK=true");
+	argv_array_pushv(out, argv);
+	return out->argv;
+}
+
 int start_command(struct child_process *cmd)
 {
 	int need_in, need_out, need_err;
@@ -448,7 +455,9 @@ fail_pipe:
 {
 	int fhin = 0, fhout = 1, fherr = 2;
 	const char **sargv = cmd->argv;
+	const char *const *senv = cmd->env;
 	struct argv_array nargv = ARGV_ARRAY_INIT;
+	struct argv_array nenv = ARGV_ARRAY_INIT;;
 
 	if (cmd->no_stdin)
 		fhin = open("/dev/null", O_RDWR);
@@ -478,6 +487,8 @@ fail_pipe:
 	else if (cmd->use_shell)
 		cmd->argv = prepare_shell_cmd(&nargv, cmd->argv);
 
+	cmd->env = prepare_env(&nenv, cmd->env);
+
 	cmd->pid = mingw_spawnvpe(cmd->argv[0], cmd->argv, (char**) cmd->env,
 			cmd->dir, fhin, fhout, fherr);
 	failed_errno = errno;
@@ -486,6 +497,8 @@ fail_pipe:
 	if (cmd->clean_on_exit && cmd->pid >= 0)
 		mark_child_for_cleanup(cmd->pid);
 
+	cmd->env = senv;
+	argv_array_clear(&nenv);
 	argv_array_clear(&nargv);
 	cmd->argv = sargv;
 	if (fhin != 0)
