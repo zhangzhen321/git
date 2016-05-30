@@ -17,6 +17,7 @@
 #define GVFS_SPARSE_HASHMAP 2
 #define GVFS_MISSING_OK 4
 #define GVFS_NO_DELETE_OUTSIDE_SPARSECHECKOUT 8
+#define GVFS_FETCH_SKIP_REACHABILITY_AND_UPLOADPACK 16
 
 static inline BOOL gvfs_config_is_set(int mask) {
 	return (core_gvfs & mask) == mask;
