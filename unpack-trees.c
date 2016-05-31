@@ -974,20 +974,19 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 			/* check to see if it matches a directory (ie /dir/) */
 			/* note, the excludes logic trims off any trailing '/' */
 			slash = strrchr(ce->name, '/');
-			if (slash) {
-				strbuf_reset(&sb);
-				strbuf_addch(&sb, '/');
+			strbuf_reset(&sb);
+			strbuf_addch(&sb, '/');
+			if (slash)
 				strbuf_add(&sb, ce->name, slash - ce->name);
-				hashmap_entry_init(&e, memhash(sb.buf, sb.len));
-				e.pattern = sb.buf;
-				e.patternlen = sb.len;
-				if (hashmap_get(&el->pattern_hash, &e, NULL))
-				{
-					/* TODO optimize here by looping through all other cache entries in this directory */
-					ce->ce_flags &= ~clear_mask;
-					cache++;
-					continue;
-				}
+			hashmap_entry_init(&e, memhash(sb.buf, sb.len));
+			e.pattern = sb.buf;
+			e.patternlen = sb.len;
+			if (hashmap_get(&el->pattern_hash, &e, NULL))
+			{
+				/* TODO optimize here by looping through all other cache entries in this directory */
+				ce->ce_flags &= ~clear_mask;
+				cache++;
+				continue;
 			}
 
 			/* check for shell globs with no wild cards (.gitignore, .gitattributes) */
