@@ -21,6 +21,8 @@ Instructions for building Git for Windows using VS2015.
       to the various MSVC and SDK libraries.
 
 [4] Add compat/vcbuild/GEN.DEPS/bin to your PATH.
+    Using a bash shell window, type:
+        export PATH=$PATH:/usr/src/git/compat/vcbuild/GEN.DEPS/bin
 
     * I still need to add a step to make the third-party DLLs
       along side the generated EXEs.
