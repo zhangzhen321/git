@@ -83,9 +83,8 @@ static int create_file(const char *path, unsigned int mode)
 	*
 	* https://mseng.visualstudio.com/VSOnline/_workitems/edit/597008
 	*
-	return open(path, O_WRONLY | O_CREAT | O_EXCL, mode);
 	*/
-	return open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
+	return open(path, O_WRONLY | O_CREAT | (!core_gvfs ? O_EXCL: O_TRUNC), mode);
 }
 
 static void *read_blob_entry(const struct cache_entry *ce, unsigned long *size)
@@ -300,10 +299,10 @@ int checkout_entry(struct cache_entry *ce,
 		 *
 		 * https://mseng.visualstudio.com/VSOnline/_workitems/edit/597008 
 		 *
-		  else if (unlink(path.buf))
+		 */
+		  else if (!core_gvfs && unlink(path.buf))
 			return error("unable to unlink old '%s' (%s)",
 				     path.buf, strerror(errno));
-		 */
 	} else if (state->not_new)
 		return 0;
 
