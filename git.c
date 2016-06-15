@@ -306,6 +306,7 @@ static int handle_alias(int *argcp, const char ***argv)
  * Runs pre/post-command hook.
  */
 struct argv_array sargv = ARGV_ARRAY_INIT;
+int pre_command_hook = 0;
 static void post_command_hook_atexit(void)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
@@ -329,10 +330,11 @@ static int run_pre_command_hook(const char **argv)
 	/*
 	 * Ensure the global pre/post command hook is only called for
 	 * the outer command and not when git is called recursively
+	 * or spawns multiple commands (like with the alias command)
 	 */
-	if (getenv("COMMAND_HOOK_LOCK"))
+	if (pre_command_hook || getenv("COMMAND_HOOK_LOCK"))
 		return 0;
-
+	pre_command_hook = 1;
 	hook = find_hook("pre-command");
 	if (hook) {
 		argv_array_push(&cp.args, hook);
