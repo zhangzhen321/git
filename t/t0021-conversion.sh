@@ -252,6 +252,19 @@ test_expect_success "filter: smudge empty file" '
 	test_cmp expected filtered-empty-in-repo
 '
 
+test_expect_success "filter: clean filters blocked when under GVFS" '
+	git config core.gvfs 64 &&
+
+	echo dead data walking >empty-in-repo &&
+	test_must_fail git add empty-in-repo
+'
+
+test_expect_success "filter: smudge filters blocked when under GVFS" '
+	test_must_fail git checkout &&
+
+	git config --unset core.gvfs
+'
+
 test_expect_success 'disable filter with empty override' '
 	test_config_global filter.disable.smudge false &&
 	test_config_global filter.disable.clean false &&

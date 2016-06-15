@@ -3,6 +3,7 @@
 #include "run-command.h"
 #include "quote.h"
 #include "sigchain.h"
+#include "gvfs.h"
 
 /*
  * convert.c - convert a file when checking it out and checking it in.
@@ -278,6 +279,9 @@ static int crlf_to_git(const char *path, const char *src, size_t len,
 	if (!buf)
 		return 1;
 
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("CRLF conversions not supported when running under GVFS");
+
 	/* only grow if not in place */
 	if (strbuf_avail(buf) + buf->len < len)
 		strbuf_grow(buf, len - buf->len);
@@ -330,6 +334,9 @@ static int crlf_to_worktree(const char *path, const char *src, size_t len,
 		if (convert_is_binary(len, &stats))
 			return 0;
 	}
+
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("CRLF conversions not supported when running under GVFS");
 
 	/* are we "faking" in place editing ? */
 	if (src == buf->buf)
@@ -446,6 +453,9 @@ static int apply_filter(const char *path, const char *src, size_t len, int fd,
 
 	if (!dst)
 		return 1;
+
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("Filter \"%s\" not supported when running under GVFS", cmd);
 
 	memset(&async, 0, sizeof(async));
 	async.proc = filter_buffer_or_fd;
