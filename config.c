@@ -109,7 +109,7 @@ static int handle_path_include(const char *path, struct config_include_data *inc
 
 	expanded = expand_user_path(path);
 	if (!expanded)
-		return error("Could not expand include path '%s'", path);
+		return error("could not expand include path '%s'", path);
 	path = expanded;
 
 	/*
@@ -718,6 +718,9 @@ static int git_default_core_config(const char *var, const char *value)
 	if (!strcmp(var, "core.attributesfile"))
 		return git_config_pathname(&git_attributes_file, var, value);
 
+	if (!strcmp(var, "core.hookspath"))
+		return git_config_pathname(&git_hooks_path, var, value);
+
 	if (!strcmp(var, "core.bare")) {
 		is_bare_repository_cfg = git_config_bool(var, value);
 		return 0;
@@ -804,8 +807,6 @@ static int git_default_core_config(const char *var, const char *value)
 
 	if (!strcmp(var, "core.autocrlf")) {
 		if (value && !strcasecmp(value, "input")) {
-			if (core_eol == EOL_CRLF)
-				return error("core.autocrlf=input conflicts with core.eol=crlf");
 			auto_crlf = AUTO_CRLF_INPUT;
 			return 0;
 		}
@@ -831,8 +832,6 @@ static int git_default_core_config(const char *var, const char *value)
 			core_eol = EOL_NATIVE;
 		else
 			core_eol = EOL_UNSET;
-		if (core_eol == EOL_CRLF && auto_crlf == AUTO_CRLF_INPUT)
-			return error("core.autocrlf=input conflicts with core.eol=crlf");
 		return 0;
 	}
 
@@ -919,11 +918,10 @@ static int git_default_core_config(const char *var, const char *value)
 	}
 
 	if (!strcmp(var, "core.hidedotfiles")) {
-		if (value && !strcasecmp(value, "dotgitonly")) {
+		if (value && !strcasecmp(value, "dotgitonly"))
 			hide_dotfiles = HIDE_DOTFILES_DOTGITONLY;
-			return 0;
-		}
-		hide_dotfiles = git_config_bool(var, value);
+		else
+			hide_dotfiles = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -975,7 +973,7 @@ static int git_default_branch_config(const char *var, const char *value)
 		else if (!strcmp(value, "always"))
 			autorebase = AUTOREBASE_ALWAYS;
 		else
-			return error("Malformed value for %s", var);
+			return error("malformed value for %s", var);
 		return 0;
 	}
 
@@ -1001,7 +999,7 @@ static int git_default_push_config(const char *var, const char *value)
 		else if (!strcmp(value, "current"))
 			push_default = PUSH_DEFAULT_CURRENT;
 		else {
-			error("Malformed value for %s: %s", var, value);
+			error("malformed value for %s: %s", var, value);
 			return error("Must be one of nothing, matching, simple, "
 				     "upstream or current.");
 		}
@@ -1222,11 +1220,12 @@ static inline void config_from_file_gently(config_fn_t fn, const char *filename,
 	(*found)++;
 }
 
-int git_config_early(config_fn_t fn, void *data, const char *repo_config)
+static int do_git_config_sequence(config_fn_t fn, void *data)
 {
 	int ret = 0, found = 0;
 	char *xdg_config = xdg_config_home("config");
 	char *user_config = expand_user_path("~/.gitconfig");
+	char *repo_config = git_pathdup("config");
 
 	if (git_config_system()) {
 		config_from_file_gently(fn, git_program_data_config(), data,
@@ -1255,6 +1254,7 @@ int git_config_early(config_fn_t fn, void *data, const char *repo_config)
 
 	free(xdg_config);
 	free(user_config);
+	free(repo_config);
 	return ret == 0 ? found : ret;
 }
 
@@ -1262,8 +1262,6 @@ int git_config_with_options(config_fn_t fn, void *data,
 			    struct git_config_source *config_source,
 			    int respect_includes)
 {
-	char *repo_config = NULL;
-	int ret;
 	struct config_include_data inc = CONFIG_INCLUDE_INIT;
 
 	if (respect_includes) {
@@ -1284,11 +1282,7 @@ int git_config_with_options(config_fn_t fn, void *data,
 	else if (config_source && config_source->blob)
 		return git_config_from_blob_ref(fn, config_source->blob, data);
 
-	repo_config = git_pathdup("config");
-	ret = git_config_early(fn, data, repo_config);
-	if (repo_config)
-		free(repo_config);
-	return ret;
+	return do_git_config_sequence(fn, data);
 }
 
 static void git_config_raw(config_fn_t fn, void *data)
@@ -1340,14 +1334,11 @@ static struct config_set_element *configset_find_element(struct config_set *cs, 
 	struct config_set_element k;
 	struct config_set_element *found_entry;
 	char *normalized_key;
-	int ret;
 	/*
 	 * `key` may come from the user, so normalize it before using it
 	 * for querying entries from the hashmap.
 	 */
-	ret = git_config_parse_key(key, &normalized_key, NULL);
-
-	if (ret)
+	if (git_config_parse_key(key, &normalized_key, NULL))
 		return NULL;
 
 	hashmap_entry_init(&k, strhash(normalized_key));
@@ -2056,6 +2047,7 @@ int git_config_set_multivar_in_file_gently(const char *config_filename,
 	 */
 	fd = lock_config_file(config_filename, &lock);
 	if (fd < 0) {
+		error_errno("could not lock config file %s", config_filename);
 		free(store.key);
 		ret = CONFIG_NO_LOCK;
 		goto out_free;
@@ -2069,8 +2061,7 @@ int git_config_set_multivar_in_file_gently(const char *config_filename,
 		free(store.key);
 
 		if ( ENOENT != errno ) {
-			error("opening %s: %s", config_filename,
-			      strerror(errno));
+			error_errno("opening %s", config_filename);
 			ret = CONFIG_INVALID_FILE; /* same as "invalid config file" */
 			goto out_free;
 		}
@@ -2154,8 +2145,7 @@ int git_config_set_multivar_in_file_gently(const char *config_filename,
 		if (contents == MAP_FAILED) {
 			if (errno == ENODEV && S_ISDIR(st.st_mode))
 				errno = EISDIR;
-			error("unable to mmap '%s': %s",
-			      config_filename, strerror(errno));
+			error_errno("unable to mmap '%s'", config_filename);
 			ret = CONFIG_INVALID_FILE;
 			contents = NULL;
 			goto out_free;
@@ -2164,8 +2154,7 @@ int git_config_set_multivar_in_file_gently(const char *config_filename,
 		in_fd = -1;
 
 		if (chmod(get_lock_file_path(lock), st.st_mode & 07777) < 0) {
-			error("chmod on %s failed: %s",
-			      get_lock_file_path(lock), strerror(errno));
+			error_errno("chmod on %s failed", get_lock_file_path(lock));
 			ret = CONFIG_NO_WRITE;
 			goto out_free;
 		}
@@ -2221,8 +2210,7 @@ int git_config_set_multivar_in_file_gently(const char *config_filename,
 	}
 
 	if (commit_lock_file(lock) < 0) {
-		error("could not write config file %s: %s", config_filename,
-		      strerror(errno));
+		error_errno("could not write config file %s", config_filename);
 		ret = CONFIG_NO_WRITE;
 		lock = NULL;
 		goto out_free;
@@ -2260,9 +2248,13 @@ void git_config_set_multivar_in_file(const char *config_filename,
 				     const char *key, const char *value,
 				     const char *value_regex, int multi_replace)
 {
-	if (git_config_set_multivar_in_file_gently(config_filename, key, value,
-						   value_regex, multi_replace) < 0)
-		die(_("Could not set '%s' to '%s'"), key, value);
+	if (!git_config_set_multivar_in_file_gently(config_filename, key, value,
+						    value_regex, multi_replace))
+		return;
+	if (value)
+		die(_("could not set '%s' to '%s'"), key, value);
+	else
+		die(_("could not unset '%s'"), key);
 }
 
 int git_config_set_multivar_gently(const char *key, const char *value,
@@ -2366,8 +2358,8 @@ int git_config_rename_section_in_file(const char *config_filename,
 	fstat(fileno(config_file), &st);
 
 	if (chmod(get_lock_file_path(lock), st.st_mode & 07777) < 0) {
-		ret = error("chmod on %s failed: %s",
-			    get_lock_file_path(lock), strerror(errno));
+		ret = error_errno("chmod on %s failed",
+				  get_lock_file_path(lock));
 		goto out;
 	}
 
@@ -2421,8 +2413,8 @@ int git_config_rename_section_in_file(const char *config_filename,
 	fclose(config_file);
 unlock_and_out:
 	if (commit_lock_file(lock) < 0)
-		ret = error("could not write config file %s: %s",
-			    config_filename, strerror(errno));
+		ret = error_errno("could not write config file %s",
+				  config_filename);
 out:
 	free(filename_buf);
 	return ret;
@@ -2440,7 +2432,7 @@ int git_config_rename_section(const char *old_name, const char *new_name)
 #undef config_error_nonbool
 int config_error_nonbool(const char *var)
 {
-	return error("Missing value for '%s'", var);
+	return error("missing value for '%s'", var);
 }
 
 int parse_config_key(const char *var,

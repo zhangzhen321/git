@@ -9,7 +9,7 @@
 
 #define HCAST(type, handle) ((type)(intptr_t)handle)
 
-unsigned int _CRT_fmode = _O_BINARY;
+static const int delay[] = { 0, 1, 10, 20, 40 };
 
 int err_win_to_posix(DWORD winerr)
 {
@@ -411,25 +411,47 @@ int mingw_rmdir(const char *pathname)
 	return -1;
 }
 
-static int make_hidden(const wchar_t *path)
+static inline int needs_hiding(const char *path)
 {
-	DWORD attribs = GetFileAttributesW(path);
-	if (SetFileAttributesW(path, FILE_ATTRIBUTE_HIDDEN | attribs))
+	const char *basename;
+
+	if (hide_dotfiles == HIDE_DOTFILES_FALSE)
+		return 0;
+
+	/* We cannot use basename(), as it would remove trailing slashes */
+	mingw_skip_dos_drive_prefix((char **)&path);
+	if (!*path)
+		return 0;
+
+	for (basename = path; *path; path++)
+		if (is_dir_sep(*path)) {
+			do {
+				path++;
+			} while (is_dir_sep(*path));
+			/* ignore trailing slashes */
+			if (*path)
+				basename = path;
+		}
+
+	if (hide_dotfiles == HIDE_DOTFILES_TRUE)
+		return *basename == '.';
+
+	assert(hide_dotfiles == HIDE_DOTFILES_DOTGITONLY);
+	return !strncasecmp(".git", basename, 4) &&
+		(!basename[4] || is_dir_sep(basename[4]));
+}
+
+static int set_hidden_flag(const wchar_t *path, int set)
+{
+	DWORD original = GetFileAttributesW(path), modified;
+	if (set)
+		modified = original | FILE_ATTRIBUTE_HIDDEN;
+	else
+		modified = original & ~FILE_ATTRIBUTE_HIDDEN;
+	if (original == modified || SetFileAttributesW(path, modified))
 		return 0;
 	errno = err_win_to_posix(GetLastError());
 	return -1;
-}
-
-void mingw_mark_as_git_dir(const char *dir)
-{
-	wchar_t wdir[MAX_LONG_PATH];
-	if (hide_dotfiles != HIDE_DOTFILES_FALSE && !is_bare_repository())
-		if (xutftowcs_long_path(wdir, dir) < 0 || make_hidden(wdir))
-			warning("Failed to make '%s' hidden", dir);
-	git_config_set("core.hideDotFiles",
-		hide_dotfiles == HIDE_DOTFILES_FALSE ? "false" :
-		(hide_dotfiles == HIDE_DOTFILES_DOTGITONLY ?
-		 "dotGitOnly" : "true"));
 }
 
 int mingw_mkdir(const char *path, int mode)
@@ -444,16 +466,8 @@ int mingw_mkdir(const char *path, int mode)
 	ret = _wmkdir(wpath);
 	if (!ret)
 		process_phantom_symlinks();
-	if (!ret && hide_dotfiles == HIDE_DOTFILES_TRUE) {
-		/*
-		 * In Windows a file or dir starting with a dot is not
-		 * automatically hidden. So lets mark it as hidden when
-		 * such a directory is created.
-		 */
-		const char *start = basename((char*)path);
-		if (*start == '.')
-			return make_hidden(wpath);
-	}
+	if (!ret && needs_hiding(path))
+		return set_hidden_flag(wpath, 1);
 	return ret;
 }
 
@@ -480,16 +494,20 @@ int mingw_open (const char *filename, int oflags, ...)
 		if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY))
 			errno = EISDIR;
 	}
-	if ((oflags & O_CREAT) && fd >= 0 &&
-	    hide_dotfiles == HIDE_DOTFILES_TRUE) {
+	if ((oflags & O_CREAT) && needs_hiding(filename)) {
 		/*
-		 * In Windows a file or dir starting with a dot is not
-		 * automatically hidden. So lets mark it as hidden when
-		 * such a file is created.
+		 * Internally, _wopen() uses the CreateFile() API which errors
+		 * out with an ERROR_ACCESS_DENIED if CREATE_ALWAYS was
+		 * specified and an already existing file's attributes do not
+		 * match *exactly*. As there is no mode or flag we can set that
+		 * would correspond to FILE_ATTRIBUTE_HIDDEN, let's just try
+		 * again *without* the O_CREAT flag (that corresponds to the
+		 * CREATE_ALWAYS flag of CreateFile()).
 		 */
-		const char *start = basename((char*)filename);
-		if (*start == '.' && make_hidden(wfilename))
-			warning("Could not mark '%s' as hidden.", filename);
+		if (fd < 0 && errno == EACCES)
+			fd = _wopen(wfilename, oflags & ~O_CREAT, mode);
+		if (fd >= 0 && set_hidden_flag(wfilename, 1))
+			warning("could not mark '%s' as hidden.", filename);
 	}
 	return fd;
 }
@@ -522,39 +540,41 @@ int mingw_fgetc(FILE *stream)
 #undef fopen
 FILE *mingw_fopen (const char *filename, const char *otype)
 {
-	int hide = 0;
+	int hide = needs_hiding(filename);
 	FILE *file;
 	wchar_t wfilename[MAX_LONG_PATH], wotype[4];
-	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
-	    basename((char*)filename)[0] == '.')
-		hide = access(filename, F_OK);
 	if (filename && !strcmp(filename, "/dev/null"))
 		filename = "nul";
 	if (xutftowcs_long_path(wfilename, filename) < 0 ||
 		xutftowcs(wotype, otype, ARRAY_SIZE(wotype)) < 0)
 		return NULL;
+	if (hide && !access(filename, F_OK) && set_hidden_flag(wfilename, 0)) {
+		error("could not unhide %s", filename);
+		return NULL;
+	}
 	file = _wfopen(wfilename, wotype);
-	if (file && hide && make_hidden(wfilename))
-		warning("Could not mark '%s' as hidden.", filename);
+	if (file && hide && set_hidden_flag(wfilename, 1))
+		warning("could not mark '%s' as hidden.", filename);
 	return file;
 }
 
 FILE *mingw_freopen (const char *filename, const char *otype, FILE *stream)
 {
-	int hide = 0;
+	int hide = needs_hiding(filename);
 	FILE *file;
 	wchar_t wfilename[MAX_LONG_PATH], wotype[4];
-	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
-	    basename((char*)filename)[0] == '.')
-		hide = access(filename, F_OK);
 	if (filename && !strcmp(filename, "/dev/null"))
 		filename = "nul";
 	if (xutftowcs_long_path(wfilename, filename) < 0 ||
 		xutftowcs(wotype, otype, ARRAY_SIZE(wotype)) < 0)
 		return NULL;
+	if (hide && !access(filename, F_OK) && set_hidden_flag(wfilename, 0)) {
+		error("could not unhide %s", filename);
+		return NULL;
+	}
 	file = _wfreopen(wfilename, wotype, stream);
-	if (file && hide && make_hidden(wfilename))
-		warning("Could not mark '%s' as hidden.", filename);
+	if (file && hide && set_hidden_flag(wfilename, 1))
+		warning("could not mark '%s' as hidden.", filename);
 	return file;
 }
 
@@ -614,9 +634,8 @@ int mingw_chdir(const char *dirname)
 	int result;
 	DECLARE_PROC_ADDR(kernel32.dll, DWORD, GetFinalPathNameByHandleW,
 			  HANDLE, LPWSTR, DWORD, DWORD);
-	wchar_t wdirname[MAX_PATH];
-	/* SetCurrentDirectoryW doesn't support long paths */
-	if (xutftowcs_path(wdirname, dirname) < 0)
+	wchar_t wdirname[MAX_LONG_PATH];
+	if (xutftowcs_long_path(wdirname, dirname) < 0)
 		return -1;
 
 	if (has_symlinks && INIT_PROC_ADDR(GetFinalPathNameByHandleW)) {

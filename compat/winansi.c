@@ -551,8 +551,10 @@ static void detect_msys_tty(int fd)
 	name = nameinfo->Name.Buffer;
 	name[nameinfo->Name.Length] = 0;
 
-	/* check if this could be a msys pty pipe ('msys-XXXX-ptyN-XX')
-	   or a cygwin pty pipe ('cygwin-XXXX-ptyN-XX') */
+	/*
+	 * Check if this could be a MSYS2 pty pipe ('msys-XXXX-ptyN-XX')
+	 * or a cygwin pty pipe ('cygwin-XXXX-ptyN-XX')
+	 */
 	if ((!wcsstr(name, L"msys-") && !wcsstr(name, L"cygwin-")) ||
 			!wcsstr(name, L"-pty"))
 		return;
@@ -578,7 +580,7 @@ void winansi_init(void)
 	con2 = is_console(2);
 	if (!con1 && !con2) {
 #ifdef DETECT_MSYS_TTY
-		/* check if stdin / stdout / stderr are msys pty pipes */
+		/* check if stdin / stdout / stderr are MSYS2 pty pipes */
 		detect_msys_tty(0);
 		detect_msys_tty(1);
 		detect_msys_tty(2);

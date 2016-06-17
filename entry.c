@@ -176,8 +176,8 @@ static int write_entry(struct cache_entry *ce,
 			ret = symlink(new, path);
 			free(new);
 			if (ret)
-				return error("unable to create symlink %s (%s)",
-					     path, strerror(errno));
+				return error_errno("unable to create symlink %s",
+						   path);
 			break;
 		}
 
@@ -194,8 +194,7 @@ static int write_entry(struct cache_entry *ce,
 		fd = open_output_fd(path, ce, to_tempfile);
 		if (fd < 0) {
 			free(new);
-			return error("unable to create file %s (%s)",
-				path, strerror(errno));
+			return error_errno("unable to create file %s", path);
 		}
 
 		wrote = write_in_full(fd, new, size);
@@ -301,8 +300,7 @@ int checkout_entry(struct cache_entry *ce,
 		 *
 		 */
 		  else if (!core_gvfs && unlink(path.buf))
-			return error("unable to unlink old '%s' (%s)",
-				     path.buf, strerror(errno));
+			  return error_errno("unable to unlink old '%s'", path.buf);
 	} else if (state->not_new)
 		return 0;
 
