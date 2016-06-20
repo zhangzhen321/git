@@ -356,10 +356,12 @@ test_expect_success SYMLINKS 're-init to move gitdir symlink' '
 
 # Tests for the hidden file attribute on windows
 is_hidden () {
-	test "1" -eq "$(echo puts [file attributes $1 -hidden]|tclsh)"
+	# Use the output of `attrib`, ignore the absolute path
+	case "$(attrib "$1")" in *H*?:*) return 0;; esac
+	return 1
 }
 
-test_expect_success MINGW 'plain hidden' '
+test_expect_success MINGW '.git hidden' '
 	rm -rf newdir &&
 	(
 		unset GIT_DIR GIT_WORK_TREE
@@ -371,7 +373,7 @@ test_expect_success MINGW 'plain hidden' '
 	check_config newdir/.git false unset
 '
 
-test_expect_success MINGW 'plain bare not hidden' '
+test_expect_success MINGW 'bare git dir not hidden' '
 	rm -rf newdir &&
 	(
 		unset GIT_DIR GIT_WORK_TREE GIT_CONFIG
