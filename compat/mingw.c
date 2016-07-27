@@ -2423,40 +2423,6 @@ int mingw_raise(int sig)
 }
 
 
-static const char *make_backslash_path(const char *path)
-{
-	static char buf[PATH_MAX + 1];
-	char *c;
-
-	if (strlcpy(buf, path, PATH_MAX) >= PATH_MAX)
-		die("Too long path: %.*s", 60, path);
-
-	for (c = buf; *c; c++) {
-		if (*c == '/')
-			*c = '\\';
-	}
-	return buf;
-}
-
-void mingw_open_html(const char *unixpath)
-{
-	const char *htmlpath = make_backslash_path(unixpath);
-	int r;
-	DECLARE_PROC_ADDR(shell32.dll, HINSTANCE, ShellExecuteA,
-			HWND, LPCSTR, LPCSTR, LPCSTR, LPCSTR, INT);
-
-	if (!INIT_PROC_ADDR(ShellExecuteA))
-		die("cannot load shell32.dll");
-
-	printf("Launching default browser to display HTML ...\n");
-	r = HCAST(int, ShellExecuteA(NULL, "open", htmlpath,
-				NULL, "\\", SW_SHOWNORMAL));
-	/* see the MSDN documentation referring to the result codes here */
-	if (r <= 32) {
-		die("failed to launch browser for %.*s", MAX_PATH, unixpath);
-	}
-}
-
 int link(const char *oldpath, const char *newpath)
 {
 	DECLARE_PROC_ADDR(kernel32.dll, BOOL, CreateHardLinkW,
@@ -2805,7 +2771,7 @@ int xwcstoutf(char *utf, const wchar_t *wcs, size_t utflen)
 	return -1;
 }
 
-static void setup_windows_environment()
+static void setup_windows_environment(void)
 {
 	char *tmp = getenv("TMPDIR");
 
@@ -2944,7 +2910,7 @@ extern int __wgetmainargs(int *argc, wchar_t ***argv, wchar_t ***env, int glob,
 		_startupinfo *si);
 #endif
 
-static NORETURN void die_startup()
+static NORETURN void die_startup(void)
 {
 	fputs("fatal: not enough memory for initialization", stderr);
 	exit(128);
@@ -3062,7 +3028,7 @@ int msc_startup(int argc, wchar_t **w_argv, wchar_t **w_env)
 
 #else
 
-void mingw_startup()
+void mingw_startup(void)
 {
 	int i, maxlen, argc;
 	char *buffer;
