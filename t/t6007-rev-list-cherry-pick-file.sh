@@ -206,5 +206,22 @@ test_expect_success '--count --left-right' '
 	git rev-list --count --left-right C...D > actual &&
 	test_cmp expect actual
 '
+remove_loose_object () {
+	sha1="$(git rev-parse "$1")" &&
+	remainder=${sha1#??} &&
+	firsttwo=${sha1%$remainder} &&
+	rm .git/objects/$firsttwo/$remainder
+}
+test_expect_success '--cherry-pick avoids looking at full diffs' '
+	git checkout -b shy-diff &&
+	test_commit dont-look-at-me &&
+	echo Hello >dont-look-at-me.t &&
+	test_tick &&
+	git commit -m tip dont-look-at-me.t &&
+	git checkout -b mainline HEAD^ &&
+	test_commit to-cherry-pick &&
+	remove_loose_object shy-diff^:dont-look-at-me.t &&
+	git rev-list --cherry-pick ...shy-diff
+'
 
 test_done
