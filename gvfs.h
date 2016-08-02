@@ -13,7 +13,7 @@
 /*
  * The list of bits in the core_gvfs setting
  */
-#define GVFS_SKIP_SHA_ON_INDEX_READ 1
+#define GVFS_SKIP_SHA_ON_INDEX 1
 #define GVFS_SPARSE_HASHMAP 2
 #define GVFS_MISSING_OK 4
 #define GVFS_NO_DELETE_OUTSIDE_SPARSECHECKOUT 8
