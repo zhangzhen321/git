@@ -307,6 +307,7 @@ static int handle_alias(int *argcp, const char ***argv)
  */
 struct argv_array sargv = ARGV_ARRAY_INIT;
 int pre_command_hook = 0;
+int exit_code = -1;
 static void post_command_hook_atexit(void)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
@@ -315,6 +316,7 @@ static void post_command_hook_atexit(void)
 	if (hook) {
 		argv_array_push(&cp.args, hook);
 		argv_array_pushv(&cp.args, sargv.argv);
+		argv_array_pushf(&cp.args, "--exit_code=%u", exit_code);
 		run_command(&cp);
 	}
 
@@ -403,7 +405,7 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 
 	trace_argv_printf(argv, "trace: built-in: git");
 
-	status = p->fn(argc, argv, prefix);
+	exit_code = status = p->fn(argc, argv, prefix);
 	if (status)
 		return status;
 
@@ -623,7 +625,7 @@ static void execv_dashed_external(const char **argv)
 	 * if we fail because the command is not found, it is
 	 * OK to return. Otherwise, we just pass along the status code.
 	 */
-	status = run_command_v_opt(argv, RUN_SILENT_EXEC_FAILURE | RUN_CLEAN_ON_EXIT);
+	exit_code = status = run_command_v_opt(argv, RUN_SILENT_EXEC_FAILURE | RUN_CLEAN_ON_EXIT);
 	if (status >= 0 || errno != ENOENT)
 		exit(status);
 
