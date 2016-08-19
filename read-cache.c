@@ -1361,6 +1361,9 @@ static int verify_hdr(struct cache_header *hdr, unsigned long size)
 	if (hdr_version < INDEX_FORMAT_LB || INDEX_FORMAT_UB < hdr_version)
 		return error("bad index version %d", hdr_version);
 
+	/* Initialize the sha before bailing out early so that split-index still works */
+	git_SHA1_Init(&c);
+
 	/*
 	Since gitmodules_config runs this code
 	and is called before git_config(git_default_config, ...)
@@ -1369,7 +1372,6 @@ static int verify_hdr(struct cache_header *hdr, unsigned long size)
 	if (gvfs_config_load_and_is_set(GVFS_SKIP_SHA_ON_INDEX))
 		return 0;
 
-	git_SHA1_Init(&c);
 	git_SHA1_Update(&c, hdr, size - 20);
 	git_SHA1_Final(sha1, &c);
 	if (hashcmp(sha1, (unsigned char *)hdr + size - 20))
@@ -1656,11 +1658,13 @@ int read_index_from(struct index_state *istate, const char *path)
 	if (istate->initialized)
 		return istate->cache_nr;
 
+	uint64_t start = getnanotime();
 	ret = do_read_index(istate, path, 0);
 
 	split_index = istate->split_index;
 	if (!split_index || is_null_sha1(split_index->base_sha1)) {
 		post_read_index_from(istate);
+		trace_performance_since(start, "read_index_from");
 		return ret;
 	}
 
@@ -1679,6 +1683,7 @@ int read_index_from(struct index_state *istate, const char *path)
 		    sha1_to_hex(split_index->base->sha1));
 	merge_base_index(istate);
 	post_read_index_from(istate);
+	trace_performance_since(start, "read_index_from");
 	return ret;
 }
 
@@ -1795,8 +1800,6 @@ static int ce_flush(git_SHA_CTX *context, int fd, unsigned char *sha1)
 	/* Append the SHA1 signature at the end */
 	if (!gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
 		git_SHA1_Final(write_buffer + left, context);
-	else
-		hashclr(write_buffer + left);
 	hashcpy(sha1, write_buffer + left);
 	left += 20;
 	return (write_in_full(fd, write_buffer, left) != left) ? -1 : 0;
@@ -2193,13 +2196,17 @@ static int write_shared_index(struct index_state *istate,
 int write_locked_index(struct index_state *istate, struct lock_file *lock,
 		       unsigned flags)
 {
+	uint64_t start = getnanotime();
 	struct split_index *si = istate->split_index;
+	int ret;
 
 	if (!si || alternate_index_output ||
 	    (istate->cache_changed & ~EXTMASK)) {
 		if (si)
 			hashclr(si->base_sha1);
-		return do_write_locked_index(istate, lock, flags);
+		ret = do_write_locked_index(istate, lock, flags);
+		trace_performance_since(start, "write_locked_index");
+		return ret;
 	}
 
 	if (getenv("GIT_TEST_SPLIT_INDEX")) {
@@ -2208,12 +2215,16 @@ int write_locked_index(struct index_state *istate, struct lock_file *lock,
 			istate->cache_changed |= SPLIT_INDEX_ORDERED;
 	}
 	if (istate->cache_changed & SPLIT_INDEX_ORDERED) {
-		int ret = write_shared_index(istate, lock, flags);
-		if (ret)
+		ret = write_shared_index(istate, lock, flags);
+		if (ret) {
+			trace_performance_since(start, "write_locked_index");
 			return ret;
+		}
 	}
 
-	return write_split_index(istate, lock, flags);
+	ret = write_split_index(istate, lock, flags);
+	trace_performance_since(start, "write_locked_index");
+	return ret;
 }
 
 /*
