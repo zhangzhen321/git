@@ -597,6 +597,9 @@ static int ident_to_git(const char *path, const char *src, size_t len,
 	if (!buf)
 		return 1;
 
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("ident conversions not supported when running under GVFS");
+
 	/* only grow if not in place */
 	if (strbuf_avail(buf) + buf->len < len)
 		strbuf_grow(buf, len - buf->len);
@@ -643,6 +646,9 @@ static int ident_to_worktree(const char *path, const char *src, size_t len,
 	cnt = count_ident(src, len);
 	if (!cnt)
 		return 0;
+
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("ident conversions not supported when running under GVFS");
 
 	/* are we "faking" in place editing ? */
 	if (src == buf->buf)
