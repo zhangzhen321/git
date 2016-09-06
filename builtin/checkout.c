@@ -20,6 +20,7 @@
 #include "resolve-undo.h"
 #include "submodule-config.h"
 #include "submodule.h"
+#include "gvfs.h"
 
 static const char * const checkout_usage[] = {
 	N_("git checkout [<options>] <branch>"),
@@ -824,10 +825,26 @@ static int switch_branches(const struct checkout_opts *opts,
 		parse_commit_or_die(new->commit);
 	}
 
-	ret = merge_working_tree(opts, &old, new, &writeout_error);
-	if (ret) {
-		free(path_to_free);
-		return ret;
+	/*
+	 * Optimize the performance of "git checkout foo" by skipping the call
+	 * to merge_working_tree. Make this as restrictive as possible, only
+	 * checkout a new branch with the current commit. Any other options force
+	 * it through the old path.
+	 */
+	if (!gvfs_config_is_set(GVFS_SKIP_MERGE_IN_CHECKOUT)
+		|| !old.commit || !new->commit
+		|| oidcmp(&old.commit->object.oid, &new->commit->object.oid)
+		|| !opts->new_branch || opts->new_branch_force || opts->new_orphan_branch
+		|| opts->patch_mode || opts->merge || opts->force || opts->force_detach
+		|| opts->writeout_stage || !opts->overwrite_ignore
+		|| opts->ignore_skipworktree || opts->ignore_other_worktrees
+		|| opts->new_branch_log || opts->branch_exists || opts->prefix
+		|| opts->source_tree) {
+		ret = merge_working_tree(opts, &old, new, &writeout_error);
+		if (ret) {
+			free(path_to_free);
+			return ret;
+		}
 	}
 
 	if (!opts->quiet && !old.path && old.commit && new->commit != old.commit)

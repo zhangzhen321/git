@@ -20,6 +20,7 @@
 #define GVFS_FETCH_SKIP_REACHABILITY_AND_UPLOADPACK 16
 #define GVFS_LOWER_DEFAULT_SLOP 32
 #define GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS 64
+#define GVFS_SKIP_MERGE_IN_CHECKOUT 128
 
 static inline BOOL gvfs_config_is_set(int mask) {
 	return (core_gvfs & mask) == mask;
