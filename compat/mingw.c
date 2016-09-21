@@ -9,8 +9,6 @@
 
 #define HCAST(type, handle) ((type)(intptr_t)handle)
 
-static const int delay[] = { 0, 1, 10, 20, 40 };
-
 int err_win_to_posix(DWORD winerr)
 {
 	int error = ENOSYS;
@@ -2421,7 +2419,6 @@ int mingw_raise(int sig)
 
 	}
 }
-
 
 int link(const char *oldpath, const char *newpath)
 {

@@ -77,6 +77,9 @@ typedef int pid_t;
 #ifndef ECONNABORTED
 #define ECONNABORTED WSAECONNABORTED
 #endif
+#ifndef ENOTSOCK
+#define ENOTSOCK WSAENOTSOCK
+#endif
 
 struct passwd {
 	char *pw_name;
@@ -705,7 +708,7 @@ int msc_main(c, v)
 void mingw_startup(void);
 #define main(c,v) dummy_decl_mingw_main(void); \
 static int mingw_main(c,v); \
-int main(int argc, char **argv) \
+int main(int argc, const char **argv) \
 { \
 	mingw_startup(); \
 	return mingw_main(__argc, (void *)__argv); \

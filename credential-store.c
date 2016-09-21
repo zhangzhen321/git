@@ -3,7 +3,6 @@
 #include "credential.h"
 #include "string-list.h"
 #include "parse-options.h"
-#include "exec_cmd.h"
 
 static struct lock_file credential_lock;
 
@@ -143,7 +142,7 @@ static void lookup_credential(const struct string_list *fns, struct credential *
 			return; /* Found credential */
 }
 
-int main(int argc, char **argv)
+int cmd_main(int argc, const char **argv)
 {
 	const char * const usage[] = {
 		"git credential-store [<options>] <action>",
@@ -161,7 +160,6 @@ int main(int argc, char **argv)
 
 	umask(077);
 
-	git_extract_argv0_path(argv[0]);
 	argc = parse_options(argc, (const char **)argv, NULL, options, usage, 0);
 	if (argc != 1)
 		usage_with_options(usage, options);
