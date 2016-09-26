@@ -49,8 +49,6 @@ while (@ARGV) {
 }
 if ($is_linking) {
 	push(@args, @lflags);
-	# force PDB to be created.
-	push(@args, "-debug");
 	unshift(@args, "link.exe");
 } else {
 	unshift(@args, "cl.exe");
