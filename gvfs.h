@@ -26,7 +26,7 @@ static inline int gvfs_config_is_set(int mask) {
 	return (core_gvfs & mask) == mask;
 }
 
-static inline int gvfs_config_is_set_any() {
+static inline int gvfs_config_is_set_any(void) {
 	return core_gvfs > 0;
 }
 
