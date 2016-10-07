@@ -22,11 +22,11 @@
 #define GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS 64
 #define GVFS_SKIP_MERGE_IN_CHECKOUT 128
 
-static inline BOOL gvfs_config_is_set(int mask) {
+static inline int gvfs_config_is_set(int mask) {
 	return (core_gvfs & mask) == mask;
 }
 
-static inline BOOL gvfs_config_is_set_any() {
+static inline int gvfs_config_is_set_any() {
 	return core_gvfs > 0;
 }
 
@@ -44,7 +44,7 @@ static inline void gvfs_load_config_value(const char *value) {
 }
 
 
-static inline BOOL gvfs_config_load_and_is_set(int mask) {
+static inline int gvfs_config_load_and_is_set(int mask) {
 	gvfs_load_config_value(0);
 	return gvfs_config_is_set(mask);
 }
