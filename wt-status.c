@@ -2273,7 +2273,7 @@ int require_clean_work_tree(const char *action, const char *hint, int ignore_sub
 	rollback_lock_file(lock_file);
 
 	if (has_unstaged_changes(ignore_submodules)) {
-		error(_("Cannot %s: You have unstaged changes."), action);
+		error(_("Cannot %s: You have unstaged changes."), _(action));
 		err = 1;
 	}
 
@@ -2281,7 +2281,8 @@ int require_clean_work_tree(const char *action, const char *hint, int ignore_sub
 		if (err)
 			error(_("Additionally, your index contains uncommitted changes."));
 		else
-			error(_("Cannot %s: Your index contains uncommitted changes."), action);
+			error(_("Cannot %s: Your index contains uncommitted changes."),
+			      _(action));
 		err = 1;
 	}
 

@@ -809,7 +809,7 @@ If they are meant to go into a new commit, run:
 
   git commit \$gpg_sign_opt_quoted
 
-In both case, once you're done, continue with:
+In both cases, once you're done, continue with:
 
   git rebase --continue
 ")"
@@ -871,9 +871,6 @@ To continue rebase after editing, run:
 	exit
 	;;
 esac
-
-git var GIT_COMMITTER_IDENT >/dev/null ||
-	die "$(gettext "You need to set your committer info first")"
 
 comment_for_reflog start
 

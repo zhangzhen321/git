@@ -47,7 +47,7 @@ int check_connected(sha1_iterate_fn fn, void *cb_data,
 		return 0;
 
 	if (!opt)
-	opt = &defaults;
+		opt = &defaults;
 	transport = opt->transport;
 
 	if (fn(cb_data, sha1)) {
