@@ -459,6 +459,7 @@ static inline int const_error(void)
 	return -1;
 }
 #define error(...) (error(__VA_ARGS__), const_error())
+#define error_errno(...) (error_errno(__VA_ARGS__), const_error())
 #endif
 
 extern void set_die_routine(NORETURN_PTR void (*routine)(const char *err, va_list params));
@@ -684,6 +685,14 @@ extern const char *githstrerror(int herror);
 #define memmem gitmemmem
 void *gitmemmem(const void *haystack, size_t haystacklen,
                 const void *needle, size_t needlelen);
+#endif
+
+#ifdef OVERRIDE_STRDUP
+#ifdef strdup
+#undef strdup
+#endif
+#define strdup gitstrdup
+char *gitstrdup(const char *s);
 #endif
 
 #ifdef NO_GETPAGESIZE
@@ -987,6 +996,19 @@ void git_qsort(void *base, size_t nmemb, size_t size,
 	       int(*compar)(const void *, const void *));
 #define qsort git_qsort
 #endif
+
+#ifndef REG_STARTEND
+#error "Git requires REG_STARTEND support. Compile with NO_REGEX=NeedsStartEnd"
+#endif
+
+static inline int regexec_buf(const regex_t *preg, const char *buf, size_t size,
+			      size_t nmatch, regmatch_t pmatch[], int eflags)
+{
+	assert(nmatch > 0 && pmatch);
+	pmatch[0].rm_so = 0;
+	pmatch[0].rm_eo = size;
+	return regexec(preg, buf, nmatch, pmatch, eflags | REG_STARTEND);
+}
 
 #ifndef DIR_HAS_BSD_GROUP_SEMANTICS
 # define FORCE_DIR_SET_GID S_ISGID

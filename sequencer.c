@@ -268,13 +268,13 @@ static const char *action_name(const struct replay_opts *opts)
 {
 	switch (opts->action) {
 	case REPLAY_REVERT:
-		return "revert";
+		return N_("revert");
 	case REPLAY_PICK:
-		return "cherry-pick";
+		return N_("cherry-pick");
 	case REPLAY_INTERACTIVE_REBASE:
-		return "rebase -i";
+		return N_("rebase -i");
 	}
-	die("Unknown action: %d", opts->action);
+	die(_("Unknown action: %d"), opts->action);
 }
 
 struct commit_message {
@@ -353,7 +353,7 @@ static int write_with_lock_file(const char *filename,
 	if (append_eol && write(msg_fd, "\n", 1) < 0)
 		return error_errno(_("Could not write eol to '%s"), filename);
 	if (commit_lock_file(&msg_file) < 0)
-		return error(_("Error wrapping up %s."), filename);
+		return error(_("Error wrapping up '%s'."), filename);
 
 	return 0;
 }
@@ -410,10 +410,10 @@ static struct tree *empty_tree(void)
 static int error_dirty_index(struct replay_opts *opts)
 {
 	if (read_cache_unmerged())
-		return error_resolve_conflict(action_name(opts));
+		return error_resolve_conflict(_(action_name(opts)));
 
 	error(_("Your local changes would be overwritten by %s."),
-		action_name(opts));
+		_(action_name(opts)));
 
 	if (advice_commit_before_merge)
 		advise(_("Commit your changes or stash them to proceed."));
@@ -431,7 +431,7 @@ static int fast_forward_to(const unsigned char *to, const unsigned char *from,
 	if (checkout_fast_forward(from, to, 1))
 		return -1; /* the callee should have complained already */
 
-	strbuf_addf(&sb, _("%s: fast-forward"), action_name(opts));
+	strbuf_addf(&sb, _("%s: fast-forward"), _(action_name(opts)));
 
 	transaction = ref_transaction_begin(&err);
 	if (!transaction ||
@@ -514,7 +514,7 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 		 * "rebase -i".
 		 */
 		return error(_("%s: Unable to write new index file"),
-			action_name(opts));
+			_(action_name(opts)));
 	rollback_lock_file(&index_lock);
 
 	if (opts->signoff)
@@ -675,7 +675,7 @@ int sequencer_commit(const char *defmsg, struct replay_opts *opts,
 				"If they are meant to go into a new commit, "
 				"run:\n\n"
 				"  git commit %s\n\n"
-				"In both case, once you're done, continue "
+				"In both cases, once you're done, continue "
 				"with:\n\n"
 				"  git rebase --continue\n", gpg_opt, gpg_opt);
 		}
@@ -1029,8 +1029,6 @@ static int do_pick_commit(enum todo_command command, struct commit *commit,
 		goto fast_forward_edit;
 	}
 	if (parent && parse_commit(parent) < 0)
-		/* TRANSLATORS: The first %s will be "revert" or
-		   "cherry-pick", the second %s a SHA1 */
 		return error(_("%s: cannot parse parent commit %s"),
 			command_to_string(command),
 			oid_to_hex(&parent->object.oid));
@@ -1199,14 +1197,14 @@ static int read_and_refresh_cache(struct replay_opts *opts)
 	if (read_index_preload(&the_index, NULL) < 0) {
 		rollback_lock_file(&index_lock);
 		return error(_("git %s: failed to read the index"),
-			action_name(opts));
+			_(action_name(opts)));
 	}
 	refresh_index(&the_index, REFRESH_QUIET|REFRESH_UNMERGED, NULL, NULL, NULL);
 	if (the_index.cache_changed && index_fd >= 0) {
 		if (write_locked_index(&the_index, &index_lock, COMMIT_LOCK)) {
 			rollback_lock_file(&index_lock);
 			return error(_("git %s: failed to refresh the index"),
-				action_name(opts));
+				_(action_name(opts)));
 		}
 	}
 	rollback_lock_file(&index_lock);
@@ -1238,7 +1236,7 @@ static void todo_list_release(struct todo_list *todo_list)
 	todo_list->nr = todo_list->alloc = 0;
 }
 
-struct todo_item *append_todo(struct todo_list *todo_list)
+struct todo_item *append_new_todo(struct todo_list *todo_list)
 {
 	ALLOC_GROW(todo_list->items, todo_list->nr + 1, todo_list->alloc);
 	return todo_list->items + todo_list->nr++;
@@ -1318,7 +1316,7 @@ static int parse_insn_buffer(char *buf, struct todo_list *todo_list)
 	for (i = 1; *p; i++) {
 		char *eol = strchrnul(p, '\n');
 
-		item = append_todo(todo_list);
+		item = append_new_todo(todo_list);
 		item->offset_in_buf = p - todo_list->buf.buf;
 		if (parse_insn_line(item, p, eol)) {
 			res |= error(_("Invalid line %d: %.*s"),
@@ -1358,19 +1356,19 @@ static int read_populate_todo(struct todo_list *todo_list,
 	strbuf_reset(&todo_list->buf);
 	fd = open(todo_file, O_RDONLY);
 	if (fd < 0)
-		return error_errno(_("Could not open %s"), todo_file);
+		return error_errno(_("Could not open '%s'"), todo_file);
 	if (strbuf_read(&todo_list->buf, fd, 0) < 0) {
 		close(fd);
-		return error(_("Could not read %s."), todo_file);
+		return error(_("Could not read '%s'."), todo_file);
 	}
 	close(fd);
 
 	res = parse_insn_buffer(todo_list->buf.buf, todo_list);
 	if (res) {
 		if (is_rebase_i(opts))
-			return error("Please fix this using "
-				"'git rebase --edit-todo'.");
-		return error(_("Unusable instruction sheet: %s"), todo_file);
+			return error(_("Please fix this using "
+				       "'git rebase --edit-todo'."));
+		return error(_("Unusable instruction sheet: '%s'"), todo_file);
 	}
 
 	if (!todo_list->nr &&
@@ -1504,7 +1502,7 @@ static int read_populate_opts(struct replay_opts *opts)
 	 * are pretty certain that it is syntactically correct.
 	 */
 	if (git_config_from_file(populate_opts_cb, git_path_opts_file(), opts) < 0)
-		return error(_("Malformed options sheet: %s"),
+		return error(_("Malformed options sheet: '%s'"),
 			git_path_opts_file());
 	return 0;
 }
@@ -1521,7 +1519,7 @@ static int walk_revs_populate_todo(struct todo_list *todo_list,
 		return -1;
 
 	while ((commit = get_revision(opts->revs))) {
-		struct todo_item *item = append_todo(todo_list);
+		struct todo_item *item = append_new_todo(todo_list);
 		const char *commit_buffer = get_commit_buffer(commit, NULL);
 		const char *subject;
 		int subject_len;
@@ -1547,7 +1545,7 @@ static int create_seq_dir(void)
 		return -1;
 	}
 	else if (mkdir(git_path_seq_dir(), 0777) < 0)
-		return error_errno(_("Could not create sequencer directory %s"),
+		return error_errno(_("Could not create sequencer directory '%s'"),
 				   git_path_seq_dir());
 	return 0;
 }
@@ -1566,12 +1564,12 @@ static int save_head(const char *head)
 	strbuf_addf(&buf, "%s\n", head);
 	if (write_in_full(fd, buf.buf, buf.len) < 0) {
 		rollback_lock_file(&head_lock);
-		return error_errno(_("Could not write to %s"),
+		return error_errno(_("Could not write to '%s'"),
 				   git_path_head_file());
 	}
 	if (commit_lock_file(&head_lock) < 0) {
 		rollback_lock_file(&head_lock);
-		return error(_("Error wrapping up %s."), git_path_head_file());
+		return error(_("Error wrapping up '%s'."), git_path_head_file());
 	}
 	return 0;
 }
@@ -1616,9 +1614,9 @@ int sequencer_rollback(struct replay_opts *opts)
 		return rollback_single_pick();
 	}
 	if (!f)
-		return error_errno(_("cannot open %s"), git_path_head_file());
+		return error_errno(_("cannot open '%s'"), git_path_head_file());
 	if (strbuf_getline_lf(&buf, f)) {
-		error(_("cannot read %s: %s"), git_path_head_file(),
+		error(_("cannot read '%s': %s"), git_path_head_file(),
 		      ferror(f) ?  strerror(errno) : _("unexpected end of file"));
 		fclose(f);
 		goto fail;
@@ -1660,7 +1658,7 @@ static int save_todo(struct todo_list *todo_list, struct replay_opts *opts)
 			todo_list->buf.len - offset) < 0)
 		return error_errno(_("Could not write to '%s'"), todo_path);
 	if (commit_lock_file(&todo_lock) < 0)
-		return error(_("Error wrapping up %s."), todo_path);
+		return error(_("Error wrapping up '%s'."), todo_path);
 
 	if (is_rebase_i(opts)) {
 		const char *done_path = rebase_path_done();
@@ -2569,9 +2567,10 @@ leave_check:
 
 	if (raise_error)
 		fprintf(stderr,
-			_("You can fix this with 'git rebase --edit-todo'.\n"
-			"Or you can abort the rebase with 'git rebase"
-			" --abort'.\n"));
+			_("You can fix this with 'git rebase --edit-todo' "
+			  "and then run 'git rebase --continue'.\n"
+			  "Or you can abort the rebase with 'git rebase"
+			  " --abort'.\n"));
 
 	return res;
 }

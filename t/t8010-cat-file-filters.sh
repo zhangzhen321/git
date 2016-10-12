@@ -44,7 +44,7 @@ test_expect_success 'cat-file --textconv --path=<path> works' '
 	test uryyb = "$(cat rot13 | remove_cr)"
 '
 
-test_expect_success '----path=<path> complains without --textconv/--filters' '
+test_expect_success '--path=<path> complains without --textconv/--filters' '
 	sha1=$(git rev-parse -q --verify HEAD:world.txt) &&
 	test_must_fail git cat-file --path=hello.txt blob $sha1 >actual 2>err &&
 	test ! -s actual &&

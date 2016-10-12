@@ -159,8 +159,8 @@ static int check_stages(unsigned stages, const struct cache_entry *ce, int pos)
 	return 0;
 }
 
-static int checkout_stage(int stage, struct cache_entry *ce, int pos,
-			  struct checkout *state)
+static int checkout_stage(int stage, const struct cache_entry *ce, int pos,
+			  const struct checkout *state)
 {
 	while (pos < active_nr &&
 	       !strcmp(active_cache[pos]->name, ce->name)) {
@@ -174,7 +174,7 @@ static int checkout_stage(int stage, struct cache_entry *ce, int pos,
 		return error(_("path '%s' does not have their version"), ce->name);
 }
 
-static int checkout_merged(int pos, struct checkout *state)
+static int checkout_merged(int pos, const struct checkout *state)
 {
 	struct cache_entry *ce = active_cache[pos];
 	const char *path = ce->name;
@@ -644,7 +644,7 @@ static int merge_working_tree(const struct checkout_opts *opts,
 				 * entries in the index.
 				 */
 
-				add_files_to_cache(NULL, NULL, 0, 0);
+				add_files_to_cache(NULL, NULL, 0);
 				/*
 				 * NEEDSWORK: carrying over local changes
 				 * when branches have different end-of-line
@@ -1082,7 +1082,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 		int recover_with_dwim = dwim_new_local_branch_ok;
 
 		if (!has_dash_dash &&
-		    (check_filename(NULL, arg) || !no_wildcard(arg)))
+		    (check_filename(opts->prefix, arg) || !no_wildcard(arg)))
 			recover_with_dwim = 0;
 		/*
 		 * Accept "git checkout foo" and "git checkout foo --"
@@ -1135,7 +1135,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 
 	if (!*source_tree)                   /* case (1): want a tree */
 		die(_("reference is not a tree: %s"), arg);
-	if (!has_dash_dash) {/* case (3).(d) -> (1) */
+	if (!has_dash_dash) {	/* case (3).(d) -> (1) */
 		/*
 		 * Do not complain the most common case
 		 *	git checkout branch
@@ -1143,7 +1143,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 		 * it would be extremely annoying.
 		 */
 		if (argc)
-			verify_non_filename(NULL, arg);
+			verify_non_filename(opts->prefix, arg);
 	} else {
 		argcount++;
 		argv++;
