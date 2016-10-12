@@ -1650,12 +1650,13 @@ int read_index_from(struct index_state *istate, const char *path)
 {
 	struct split_index *split_index;
 	int ret;
+	uint64_t start;
 
 	/* istate->initialized covers both .git/index and .git/sharedindex.xxx */
 	if (istate->initialized)
 		return istate->cache_nr;
 
-	uint64_t start = getnanotime();
+	start = getnanotime();
 	ret = do_read_index(istate, path, 0);
 
 	split_index = istate->split_index;
