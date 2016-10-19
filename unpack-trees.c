@@ -1005,26 +1005,35 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 				continue;
 			}
 
-			/* check to see if it matches a directory (ie /dir/) */
-			/* note, the excludes logic trims off any trailing '/' */
-			slash = strrchr(ce->name, '/');
+			/*
+			 * Check to see if it matches a directory or any path
+			 * underneath it.  In other words, /foo/ will match a
+			 * directory /foo and all paths underneath it.
+			 *
+			 * Note, the excludes logic trims off any trailing '/'
+			 */
 			strbuf_reset(&sb);
 			strbuf_addch(&sb, '/');
+			slash = strrchr(ce->name, '/');
 			if (slash)
 				strbuf_add(&sb, ce->name, slash - ce->name);
-			hashmap_entry_init(&e, memhash(sb.buf, sb.len));
-			e.pattern = sb.buf;
-			e.patternlen = sb.len;
-			if (hashmap_get(&el->pattern_hash, &e, NULL))
-			{
-				/* TODO optimize here by looping through all other cache entries in this directory */
-				ce->ce_flags &= ~clear_mask;
-				cache++;
-				continue;
+			while (sb.len) {
+				hashmap_entry_init(&e, memhash(sb.buf, sb.len));
+				e.pattern = sb.buf;
+				e.patternlen = sb.len;
+				if (hashmap_get(&el->pattern_hash, &e, NULL))
+				{
+					ce->ce_flags &= ~clear_mask;
+					goto next;
+				}
+
+				slash = strrchr(sb.buf, '/');
+				strbuf_setlen(&sb, slash - sb.buf);
 			}
 
 			/* check for shell globs with no wild cards (.gitignore, .gitattributes) */
 			strbuf_reset(&sb);
+			slash = strrchr(ce->name, '/');
 			if (slash)
 				strbuf_addstr(&sb, slash+1);
 			else
@@ -1035,6 +1044,7 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 			if (hashmap_get(&el->pattern_hash, &e, NULL))
 				ce->ce_flags &= ~clear_mask;
 
+next:
 			cache++;
 			continue;
 		}

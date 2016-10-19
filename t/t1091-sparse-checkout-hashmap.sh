@@ -52,33 +52,40 @@ test_expect_success 'return to full checkout of master' '
 test_expect_success 'perform sparse checkout of master with a directory' '
 	mkdir one &&
 	mkdir one/two &&
+	mkdir one/two/three &&
 	echo "initial" >one/a &&
 	echo "initial" >one/b &&
 	echo "initial" >one/two/a &&
 	echo "initial" >one/two/b &&
-	git add one/a one/b one/two/a one/two/b &&
+	echo "initial" >one/two/three/a &&
+	echo "initial" >one/two/three/b &&
+	git add --all &&
 	git commit -m "directory commit" &&
-	echo "/one/" >.git/info/sparse-checkout &&
+	echo "/one/two/" >.git/info/sparse-checkout &&
 	git checkout master &&
-	test_path_is_file one/a &&
-	test_path_is_file one/b &&
-	test_path_is_missing one/two/a &&
-	test_path_is_missing one/two/a &&
 	test_path_is_missing a &&
 	test_path_is_missing b &&
-	test_path_is_missing c
+	test_path_is_missing c &&
+	test_path_is_missing one/a &&
+	test_path_is_missing one/b &&
+	test_path_is_file one/two/a &&
+	test_path_is_file one/two/b &&
+	test_path_is_file one/two/three/a &&
+	test_path_is_file one/two/three/b
 '
 
 test_expect_success 'perform sparse checkout of master with a shell glob' '
 	echo "a" >>.git/info/sparse-checkout &&
 	git checkout master &&
-	test_path_is_file one/a &&
-	test_path_is_file one/b &&
-	test_path_is_file one/two/a &&
-	test_path_is_missing one/two/b &&
 	test_path_is_file a &&
 	test_path_is_missing b &&
-	test_path_is_missing c
+	test_path_is_missing c &&
+	test_path_is_file one/a &&
+	test_path_is_missing one/b &&
+	test_path_is_file one/two/a &&
+	test_path_is_file one/two/b &&
+	test_path_is_file one/two/three/a &&
+	test_path_is_file one/two/three/b
 '
 
 test_expect_success 'perform sparse checkout of master with a directory and files' '
@@ -87,13 +94,15 @@ test_expect_success 'perform sparse checkout of master with a directory and file
 	echo "/c" >>.git/info/sparse-checkout &&
 	echo "/one/two/" >>.git/info/sparse-checkout &&
 	git checkout master &&
-	test_path_is_file one/a &&
-	test_path_is_file one/b &&
-	test_path_is_file one/two/a &&
-	test_path_is_file one/two/b &&
 	test_path_is_file a &&
 	test_path_is_file b &&
-	test_path_is_file c
+	test_path_is_file c &&
+	test_path_is_file one/a &&
+	test_path_is_missing one/b &&
+	test_path_is_file one/two/a &&
+	test_path_is_file one/two/b &&
+	test_path_is_file one/two/three/a &&
+	test_path_is_file one/two/three/b
 '
 
 test_done
