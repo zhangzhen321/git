@@ -134,6 +134,17 @@ void setup_unpack_trees_porcelain(struct unpack_trees_options *opts,
 		opts->unpack_rejects[i].strdup_strings = 1;
 }
 
+static unsigned int(*pathhash)(const char *path);
+static int(*pathcmp)(const char *a, const char *b, size_t len);
+
+static int path_hashmap_cmp(const void *a, const void *b, const void *key)
+{
+	const struct exclude *e1 = a;
+	const struct exclude *e2 = b;
+
+	return pathcmp(e1->pattern, e2->pattern, e1->patternlen);
+}
+
 static int do_add_entry(struct unpack_trees_options *o, struct cache_entry *ce,
 			 unsigned int set, unsigned int clear)
 {
@@ -996,7 +1007,7 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 			strbuf_reset(&sb);
 			strbuf_addch(&sb, '/');
 			strbuf_add(&sb, ce->name, ce->ce_namelen);
-			hashmap_entry_init(&e, memhash(sb.buf, sb.len));
+			hashmap_entry_init(&e, pathhash(sb.buf));
 			e.pattern = sb.buf;
 			e.patternlen = sb.len;
 			if (hashmap_get(&el->pattern_hash, &e, NULL)) {
@@ -1018,7 +1029,7 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 			if (slash)
 				strbuf_add(&sb, ce->name, slash - ce->name);
 			while (sb.len) {
-				hashmap_entry_init(&e, memhash(sb.buf, sb.len));
+				hashmap_entry_init(&e, pathhash(sb.buf));
 				e.pattern = sb.buf;
 				e.patternlen = sb.len;
 				if (hashmap_get(&el->pattern_hash, &e, NULL))
@@ -1038,7 +1049,7 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 				strbuf_addstr(&sb, slash+1);
 			else
 				strbuf_add(&sb, ce->name, ce->ce_namelen);
-			hashmap_entry_init(&e, memhash(sb.buf, sb.len));
+			hashmap_entry_init(&e, pathhash(sb.buf));
 			e.pattern = sb.buf;
 			e.patternlen = sb.len;
 			if (hashmap_get(&el->pattern_hash, &e, NULL))
@@ -1111,11 +1122,6 @@ static int clear_ce_flags(struct cache_entry **cache, int nr,
 }
 
 
-static int pattern_cmp(const struct exclude *e1, const struct exclude *e2, const void *unused)
-{
-	return strncmp(e1->pattern, e2->pattern, e1->patternlen);
-}
-
 /*
  * Set/Clear CE_NEW_SKIP_WORKTREE according to $GIT_DIR/info/sparse-checkout
  */
@@ -1145,11 +1151,14 @@ static void mark_new_skip_worktree(struct exclude_list *el,
 	/* use el->pattern_hash.cmpfn as a flag to see if we get can reuse the old hashmap */
 	if (gvfs_config_is_set(GVFS_SPARSE_HASHMAP) && el->nr && !el->pattern_hash.cmpfn) {
 
-		hashmap_init(&el->pattern_hash, (hashmap_cmp_fn)pattern_cmp, el->nr);
+		pathhash = ignore_case ? strihash : strhash;
+		pathcmp = ignore_case ? strnicmp : strncmp;
+
+		hashmap_init(&el->pattern_hash, path_hashmap_cmp, el->nr);
 
 		for (i = el->nr - 1; 0 <= i; i--) {
 			struct exclude *x = el->excludes[i];
-			hashmap_entry_init(&x->ent, strhash(x->pattern));
+			hashmap_entry_init(&x->ent, pathhash(x->pattern));
 			hashmap_add(&el->pattern_hash, &x->ent);
 		}
 	}
