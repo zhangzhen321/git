@@ -341,14 +341,11 @@ ifeq ($(uname_S),Windows)
 	pathsep = ;
 	# Prepend MSVC 64-bit tool-chain to PATH.
 	#
-	# TODO A normal git-bash window DOES NOT contain the path to CL.EXE
-	# TODO and friends in $PATH.
-	# TODO
-	# TODO Warning: There is a MS link.exe next to CL.exe and a gcc link.exe
-	# TODO next to gcc.exe, so we have to prepend this onto the existing
-	# TODO $PATH.  (Or fix clink.pl and lib.pl to use full paths.)
+	# A regular Git Bash *does not* have cl.exe in its $PATH. As there is a
+	# link.exe next to, and required by, cl.exe, we have to prepend this
+	# onto the existing $PATH.
 	#
-	SANE_TOOL_PATH = /c/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64
+	SANE_TOOL_PATH ?= /c/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/amd64
 	HAVE_ALLOCA_H = YesPlease
 	NO_PREAD = YesPlease
 	NEEDS_CRYPTO_WITH_SSL = YesPlease
@@ -361,8 +358,7 @@ ifeq ($(uname_S),Windows)
 	NO_STRCASESTR = YesPlease
 	NO_STRLCPY = YesPlease
 	NO_MEMMEM = YesPlease
-	# NEEDS_LIBICONV = YesPlease
-	NO_ICONV = YesPlease
+	NEEDS_LIBICONV = YesPlease
 	NO_STRTOUMAX = YesPlease
 	NO_MKDTEMP = YesPlease
 	NO_MKSTEMPS = YesPlease
@@ -439,6 +435,8 @@ else
 	BASIC_CFLAGS += -MDd -DDEBUG -D_DEBUG
 endif
 	X = .exe
+
+compat/msvc.o: compat/msvc.c compat/mingw.c GIT-CFLAGS
 endif
 ifeq ($(uname_S),Interix)
 	NO_INITGROUPS = YesPlease

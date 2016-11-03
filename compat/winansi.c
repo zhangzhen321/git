@@ -481,7 +481,8 @@ static HANDLE swap_osfhnd(int fd, HANDLE new_handle)
 	assert((fd == 1) || (fd == 2));
 	DWORD key_std = ((fd == 1) ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
 
-	/* Create a copy of the original handle associated with fd
+	/*
+	 * Create a copy of the original handle associated with fd
 	 * because the original will get closed when we dup2().
 	 */
 	HANDLE h_original = (HANDLE)_get_osfhandle(fd);
@@ -490,7 +491,8 @@ static HANDLE swap_osfhnd(int fd, HANDLE new_handle)
 	/* Create a temp fd associated with the already open "new_handle". */
 	int fd_temp = _open_osfhandle((intptr_t)new_handle, O_BINARY);
 
-	/* Use stock dup2() to re-bind fd to the new handle.  Note that
+	/*
+	 * Use stock dup2() to re-bind fd to the new handle.  Note that
 	 * this will implicitly close(1) and close both fd=1 and the
 	 * originally associated handle.  It will open a new fd=1 and
 	 * call DuplicateHandle() on the handle associated with fd_temp.
@@ -724,7 +726,7 @@ HANDLE winansi_get_osfhandle(int fd)
 	return hnd;
 }
 
-#if defined(_MSC_VER)
+#ifdef _MSC_VER
 
 /* Wrapper for isatty().  Most calls in the main git code
  * call isatty(1 or 2) to see if the instance is interactive
@@ -743,4 +745,3 @@ int msc_isatty(fd)
 }
 
 #endif
-

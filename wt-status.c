@@ -369,11 +369,11 @@ static void wt_longstatus_print_change_data(struct wt_status *s,
 		if (d->new_submodule_commits || d->dirty_submodule) {
 			strbuf_addstr(&extra, " (");
 			if (d->new_submodule_commits)
-				strbuf_addf(&extra, _("new commits, "));
+				strbuf_addstr(&extra, _("new commits, "));
 			if (d->dirty_submodule & DIRTY_SUBMODULE_MODIFIED)
-				strbuf_addf(&extra, _("modified content, "));
+				strbuf_addstr(&extra, _("modified content, "));
 			if (d->dirty_submodule & DIRTY_SUBMODULE_UNTRACKED)
-				strbuf_addf(&extra, _("untracked content, "));
+				strbuf_addstr(&extra, _("untracked content, "));
 			strbuf_setlen(&extra, extra.len - 2);
 			strbuf_addch(&extra, ')');
 		}
@@ -1120,7 +1120,6 @@ static void abbrev_sha1_in_line(struct strbuf *line)
 	split = strbuf_split_max(line, ' ', 3);
 	if (split[0] && split[1]) {
 		unsigned char sha1[20];
-		const char *abbrev;
 
 		/*
 		 * strbuf_split_max left a space. Trim it and re-add
@@ -1128,9 +1127,10 @@ static void abbrev_sha1_in_line(struct strbuf *line)
 		 */
 		strbuf_trim(split[1]);
 		if (!get_sha1(split[1]->buf, sha1)) {
-			abbrev = find_unique_abbrev(sha1, DEFAULT_ABBREV);
 			strbuf_reset(split[1]);
-			strbuf_addf(split[1], "%s ", abbrev);
+			strbuf_add_unique_abbrev(split[1], sha1,
+						 DEFAULT_ABBREV);
+			strbuf_addch(split[1], ' ');
 			strbuf_reset(line);
 			for (i = 0; split[i]; i++)
 				strbuf_addbuf(line, split[i]);
@@ -1353,10 +1353,8 @@ static char *get_branch(const struct worktree *wt, const char *path)
 	else if (starts_with(sb.buf, "refs/"))
 		;
 	else if (!get_sha1_hex(sb.buf, sha1)) {
-		const char *abbrev;
-		abbrev = find_unique_abbrev(sha1, DEFAULT_ABBREV);
 		strbuf_reset(&sb);
-		strbuf_addstr(&sb, abbrev);
+		strbuf_add_unique_abbrev(&sb, sha1, DEFAULT_ABBREV);
 	} else if (!strcmp(sb.buf, "detached HEAD")) /* rebase */
 		goto got_nothing;
 	else			/* bisect */
@@ -1393,8 +1391,7 @@ static int grab_1st_switch(unsigned char *osha1, unsigned char *nsha1,
 	if (!strcmp(cb->buf.buf, "HEAD")) {
 		/* HEAD is relative. Resolve it to the right reflog entry. */
 		strbuf_reset(&cb->buf);
-		strbuf_addstr(&cb->buf,
-			      find_unique_abbrev(nsha1, DEFAULT_ABBREV));
+		strbuf_add_unique_abbrev(&cb->buf, nsha1, DEFAULT_ABBREV);
 	}
 	return 1;
 }
@@ -2273,15 +2270,16 @@ int require_clean_work_tree(const char *action, const char *hint, int ignore_sub
 	rollback_lock_file(lock_file);
 
 	if (has_unstaged_changes(ignore_submodules)) {
-		error(_("Cannot %s: You have unstaged changes."), _(action));
+		/* TRANSLATORS: the action is e.g. "pull with rebase" */
+		error(_("cannot %s: You have unstaged changes."), _(action));
 		err = 1;
 	}
 
 	if (has_uncommitted_changes(ignore_submodules)) {
 		if (err)
-			error(_("Additionally, your index contains uncommitted changes."));
+			error(_("additionally, your index contains uncommitted changes."));
 		else
-			error(_("Cannot %s: Your index contains uncommitted changes."),
+			error(_("cannot %s: Your index contains uncommitted changes."),
 			      _(action));
 		err = 1;
 	}
@@ -2290,7 +2288,7 @@ int require_clean_work_tree(const char *action, const char *hint, int ignore_sub
 		if (hint)
 			error("%s", hint);
 		if (!gently)
-			exit(err);
+			exit(128);
 	}
 
 	return err;

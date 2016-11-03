@@ -2,6 +2,10 @@
 #define GIT_COMPAT_UTIL_H
 
 #ifdef USE_MSVC_CRTDBG
+/*
+ * For these to work they must appear very early in each
+ * file -- before most of the standard header files.
+ */
 #include <stdlib.h>
 #include <crtdbg.h>
 #endif
@@ -274,6 +278,32 @@ extern char *gitdirname(char *);
 
 #ifndef NO_ICONV
 #include <iconv.h>
+#ifdef _MSC_VER
+/*
+ * At least version 1.14.0.11 of the libiconv NuPkg at
+ * https://www.nuget.org/packages/libiconv/ does not set errno at all.
+ *
+ * Let's simulate it by testing whether we might have possibly run out of
+ * space.
+ */
+static inline size_t msvc_iconv(iconv_t conv,
+	const char **inpos, size_t *insize,
+	char **outpos, size_t *outsize)
+{
+	int saved_errno = errno, res;
+
+	errno = ENOENT;
+	res = iconv(conv, inpos, insize, outpos, outsize);
+	if (!res)
+		errno = saved_errno;
+	else if (errno == ENOENT)
+		errno = *outsize < 16 ? E2BIG : 0;
+
+	return res;
+}
+#undef iconv
+#define iconv msvc_iconv
+#endif
 #endif
 
 #ifndef NO_OPENSSL
@@ -385,12 +415,12 @@ static inline char *git_find_last_dir_sep(const char *path)
 #define find_last_dir_sep git_find_last_dir_sep
 #endif
 
-#ifndef git_program_data_config
-#define git_program_data_config() NULL
-#endif
-
 #ifndef query_user_email
 #define query_user_email() NULL
+#endif
+
+#ifndef git_program_data_config
+#define git_program_data_config() NULL
 #endif
 
 #if defined(__HP_cc) && (__HP_cc >= 61000)
@@ -871,25 +901,20 @@ static inline void copy_array(void *dst, const void *src, size_t n, size_t size)
  * times, and it must be assignable as an lvalue.
  */
 #define FLEX_ALLOC_MEM(x, flexname, buf, len) do { \
-	(x) = NULL; /* silence -Wuninitialized for offset calculation */ \
-	(x) = xalloc_flex(sizeof(*(x)), (char *)(&((x)->flexname)) - (char *)(x), (buf), (len)); \
+	size_t flex_array_len_ = (len); \
+	(x) = xcalloc(1, st_add3(sizeof(*(x)), flex_array_len_, 1)); \
+	memcpy((void *)(x)->flexname, (buf), flex_array_len_); \
 } while (0)
 #define FLEXPTR_ALLOC_MEM(x, ptrname, buf, len) do { \
-	(x) = xalloc_flex(sizeof(*(x)), sizeof(*(x)), (buf), (len)); \
+	size_t flex_array_len_ = (len); \
+	(x) = xcalloc(1, st_add3(sizeof(*(x)), flex_array_len_, 1)); \
+	memcpy((x) + 1, (buf), flex_array_len_); \
 	(x)->ptrname = (void *)((x)+1); \
 } while(0)
 #define FLEX_ALLOC_STR(x, flexname, str) \
 	FLEX_ALLOC_MEM((x), flexname, (str), strlen(str))
 #define FLEXPTR_ALLOC_STR(x, ptrname, str) \
 	FLEXPTR_ALLOC_MEM((x), ptrname, (str), strlen(str))
-
-static inline void *xalloc_flex(size_t base_len, size_t offset,
-				const void *src, size_t src_len)
-{
-	unsigned char *ret = xcalloc(1, st_add3(base_len, src_len, 1));
-	memcpy(ret + offset, src, src_len);
-	return ret;
-}
 
 static inline char *xstrdup_or_null(const char *str)
 {
