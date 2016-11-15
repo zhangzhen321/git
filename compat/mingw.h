@@ -265,7 +265,7 @@ char *mingw_getcwd(char *pointer, int len);
  * These talk to the CRT using UNICODE/wchar_t, but maintain the original
  * narrow-char API.
  *
- * Note that the MSCRT maintains both ASNI (getenv()) and UNICODE (_wgetenv())
+ * Note that the MSCRT maintains both ANSI (getenv()) and UNICODE (_wgetenv())
  * routines and stores both versions of each environment variable in parallel
  * (and secretly updates both when you set one or the other), but it uses CP_ACP
  * to do the conversion rather than CP_UTF8.
@@ -283,7 +283,7 @@ char *mingw_getcwd(char *pointer, int len);
  * inherited environment.
  *
  * We require NO_SETENV (and let gitsetenv() call our msc_putenv).
- */ 
+ */
 #define getenv       msc_getenv
 #define putenv       msc_putenv
 #define unsetenv     msc_putenv
@@ -497,10 +497,10 @@ static inline void convert_slashes(char *path)
 int mingw_offset_1st_component(const char *path);
 #define offset_1st_component mingw_offset_1st_component
 #define PATH_SEP ';'
-extern const char *program_data_config(void);
-#define git_program_data_config program_data_config
 extern char *mingw_query_user_email(void);
 #define query_user_email mingw_query_user_email
+extern const char *program_data_config(void);
+#define git_program_data_config program_data_config
 #if !defined(__MINGW64_VERSION_MAJOR) && (!defined(_MSC_VER) || _MSC_VER < 1800)
 #define PRIuMAX "I64u"
 #define PRId64 "I64d"
@@ -697,7 +697,7 @@ extern CRITICAL_SECTION pinfo_cs;
 
 int msc_startup(int argc, wchar_t **w_argv, wchar_t **w_env);
 
-#define main(c,v) dummy_decl_msc_main();				\
+#define main(c,v) dummy_decl_msc_main(void);				\
 int wmain(int my_argc,									\
 		  wchar_t **my_w_argv,							\
 		  wchar_t **my_w_env)							\
