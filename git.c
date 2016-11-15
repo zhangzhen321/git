@@ -305,7 +305,6 @@ static int handle_alias(int *argcp, const char ***argv)
  * Runs pre/post-command hook.
  */
 struct argv_array sargv = ARGV_ARRAY_INIT;
-int pre_command_hook = 0;
 int exit_code = -1;
 static void post_command_hook_atexit(void)
 {
@@ -333,9 +332,9 @@ static int run_pre_command_hook(const char **argv)
 	 * the outer command and not when git is called recursively
 	 * or spawns multiple commands (like with the alias command)
 	 */
-	if (pre_command_hook || getenv("COMMAND_HOOK_LOCK"))
+	if (getenv("COMMAND_HOOK_LOCK"))
 		return 0;
-	pre_command_hook = 1;
+	setenv("COMMAND_HOOK_LOCK", "true", TRUE);
 	hook = find_hook("pre-command");
 	if (hook) {
 		argv_array_push(&cp.args, hook);
@@ -395,6 +394,7 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 			trace_repo_setup(prefix);
 	}
 	commit_pager_choice();
+	atexit(wait_for_pager_atexit);
 
 	if (!help && p->option & NEED_WORK_TREE)
 		setup_work_tree();
@@ -604,6 +604,7 @@ static void execv_dashed_external(const char **argv)
 	if (use_pager == -1)
 		use_pager = check_pager_config(argv[0]);
 	commit_pager_choice();
+	atexit(wait_for_pager_atexit);
 
 	strbuf_addf(&cmd, "git-%s", argv[0]);
 
@@ -705,6 +706,9 @@ int cmd_main(int argc, const char **argv)
 	} else {
 		/* The user didn't specify a command; give them help */
 		commit_pager_choice();
+		atexit(wait_for_pager_atexit);
+		if (run_pre_command_hook(argv))
+			die("pre-command hook aborted command");
 		printf("usage: %s\n\n", git_usage_string);
 		list_common_cmds_help();
 		printf("\n%s\n", _(git_more_info_string));

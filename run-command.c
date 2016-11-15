@@ -267,7 +267,6 @@ static int wait_or_whine(pid_t pid, const char *argv0, int in_signal)
 
 const char **prepare_env(struct argv_array *out, const char *const *argv)
 {
-	argv_array_push(out, "COMMAND_HOOK_LOCK=true");
 	argv_array_pushv(out, argv);
 	return out->argv;
 }
