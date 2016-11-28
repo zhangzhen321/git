@@ -29,18 +29,11 @@ static void wait_for_pager(int in_signal)
 }
 
 
-/*
- * wait_for_pager_atexit will close stdout/stderr so it needs to be
- * registered first so that it will execute last and not close the
- * handles until all other atexit handlers have finished
- */
 static int run_wait_for_pager_atexit = 0;
 void wait_for_pager_atexit(void)
 {
-	if (run_wait_for_pager_atexit) {
-		run_wait_for_pager_atexit = 0;
+	if (run_wait_for_pager_atexit)
 		wait_for_pager(0);
-	}
 }
 
 static void wait_for_pager_signal(int signo)

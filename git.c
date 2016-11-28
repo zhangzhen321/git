@@ -394,7 +394,6 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 			trace_repo_setup(prefix);
 	}
 	commit_pager_choice();
-	atexit(wait_for_pager_atexit);
 
 	if (!help && p->option & NEED_WORK_TREE)
 		setup_work_tree();
@@ -604,7 +603,6 @@ static void execv_dashed_external(const char **argv)
 	if (use_pager == -1)
 		use_pager = check_pager_config(argv[0]);
 	commit_pager_choice();
-	atexit(wait_for_pager_atexit);
 
 	strbuf_addf(&cmd, "git-%s", argv[0]);
 
@@ -678,6 +676,12 @@ int cmd_main(int argc, const char **argv)
 	if (!cmd)
 		cmd = "git-help";
 
+	/*
+	 * wait_for_pager_atexit will close stdout/stderr so it needs to be
+	 * registered first so that it will execute last and not close the
+	 * handles until all other atexit handlers have finished
+	 */
+	atexit(wait_for_pager_atexit);
 	trace_command_performance(argv);
 
 	/*
@@ -706,7 +710,6 @@ int cmd_main(int argc, const char **argv)
 	} else {
 		/* The user didn't specify a command; give them help */
 		commit_pager_choice();
-		atexit(wait_for_pager_atexit);
 		if (run_pre_command_hook(argv))
 			die("pre-command hook aborted command");
 		printf("usage: %s\n\n", git_usage_string);
