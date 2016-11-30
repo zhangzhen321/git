@@ -274,7 +274,7 @@ static int run_pre_reset_hook(int reset_type, const char **argv)
 
 	argv_array_push(&args, reset_type_names[reset_type == NONE ? MIXED : reset_type]);
 	argv_array_pushv(&args, argv);
-	ret = run_hook_ve(NULL, "pre-reset", args.argv);
+	ret = run_hook_argv(NULL, "pre-reset", args.argv);
 	argv_array_clear(&args);
 
 	return ret;
