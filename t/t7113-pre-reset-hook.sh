@@ -13,21 +13,19 @@ test_expect_success 'with no hook' '
 
 '
 
-# now install hook that always succeeds
-HOOKDIR="$(git rev-parse --git-dir)/hooks"
-HOOK="$HOOKDIR/pre-reset"
-mkdir -p "$HOOKDIR"
-cat > "$HOOK" <<EOF
-#!/bin/sh
-exit 0
-EOF
-chmod +x "$HOOK"
+test_expect_success 'now install hook that always succeeds' '
+	mkdir -p .git/hooks &&
+	write_script .git/hooks/pre-reset <<-EOF
+	echo "\$*" >\$(git rev-parse --git-dir)/pre-reset.out
+	EOF
+'
 
 test_expect_success 'with succeeding hook' '
 
 	echo "second" >> file &&
 	git add file &&
-	git reset
+	git reset &&
+	test mixed = "$(cat .git/pre-reset.out)"
 
 '
 
@@ -35,7 +33,8 @@ test_expect_success 'file with succeeding hook' '
 
 	echo "third" >> file &&
 	git add file &&
-	git reset HEAD file
+	git reset HEAD file &&
+	test "mixed HEAD file" = "$(cat .git/pre-reset.out)"
 
 '
 
@@ -43,31 +42,19 @@ test_expect_success '--hard with succeeding hook' '
 
 	echo "fourth" >> file &&
 	git add file &&
-	git reset --hard
+	git reset --hard &&
+	test hard = "$(cat .git/pre-reset.out)"
 
 '
-
-# now a hook that fails
-cat > "$HOOK" <<EOF
-#!/bin/sh
-exit 1
-EOF
 
 test_expect_success 'with failing hook' '
 
+	write_script .git/hooks/pre-reset <<-EOF &&
+	exit 1
+	EOF
 	echo "fifth" >> file &&
 	git add file &&
 	test_must_fail git reset HEAD file
-
-'
-
-# now a hook that is non-executable
-chmod -x "$HOOK"
-test_expect_success POSIXPERM 'with non-executable hook' '
-
-	echo "sixth" >> file &&
-	git add file &&
-	git reset HEAD file
 
 '
 
