@@ -5,41 +5,28 @@ test_description='post-command hook'
 . ./test-lib.sh
 
 test_expect_success 'with no hook' '
-
 	echo "first" > file &&
 	git add file &&
 	git commit -m "first"
-
 '
 
-# now install hook that outputs a file
-HOOKDIR="$(git rev-parse --git-dir)/hooks"
-HOOK="$HOOKDIR/post-command"
-mkdir -p "$HOOKDIR"
-cat > "$HOOK" <<EOF
-#!/bin/sh
-echo test >> post-command.txt
-exit 0
-EOF
-chmod +x "$HOOK"
-
-test_expect_success 'post command hook runs' '
-
+test_expect_success 'with succeeding hook' '
+	mkdir -p .git/hooks &&
+	write_script .git/hooks/post-command <<-EOF &&
+	echo "\$*" >\$(git rev-parse --git-dir)/post-command.out
+	EOF
 	echo "second" >> file &&
 	git add file &&
-	test_path_is_file post-command.txt
-
+	test "add file --exit_code=0" = "$(cat .git/post-command.out)"
 '
 
-# now a hook that is non-executable
-chmod -x "$HOOK"
-test_expect_success POSIXPERM 'non-executable hook doesnt run' '
-
-    rm post-command.txt &&
+test_expect_success 'with failing pre-command hook' '
+	write_script .git/hooks/pre-command <<-EOF &&
+	exit 1
+	EOF
 	echo "third" >> file &&
-	git add file &&
-	test_path_is_missing post-command.txt
-
+	test_must_fail git add file &&
+	test_path_is_missing "$(cat .git/post-command.out)"
 '
 
 test_done

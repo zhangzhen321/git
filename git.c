@@ -305,26 +305,12 @@ static int handle_alias(int *argcp, const char ***argv)
  * Runs pre/post-command hook.
  */
 struct argv_array sargv = ARGV_ARRAY_INIT;
+int run_post_hook = 0;
 int exit_code = -1;
-static void post_command_hook_atexit(void)
-{
-	struct child_process cp = CHILD_PROCESS_INIT;
-	const char *hook = find_hook("post-command");
-
-	if (hook) {
-		argv_array_push(&cp.args, hook);
-		argv_array_pushv(&cp.args, sargv.argv);
-		argv_array_pushf(&cp.args, "--exit_code=%u", exit_code);
-		run_command(&cp);
-	}
-
-	argv_array_clear(&sargv);
-}
 
 static int run_pre_command_hook(const char **argv)
 {
-	struct child_process cp = CHILD_PROCESS_INIT;
-	const char *hook;
+	char *lock;
 	int ret = 0;
 
 	/*
@@ -332,26 +318,48 @@ static int run_pre_command_hook(const char **argv)
 	 * the outer command and not when git is called recursively
 	 * or spawns multiple commands (like with the alias command)
 	 */
-	if (getenv("COMMAND_HOOK_LOCK"))
+	lock = getenv("COMMAND_HOOK_LOCK");
+	if (lock && !strcmp(lock, "true"))
 		return 0;
-	setenv("COMMAND_HOOK_LOCK", "true", TRUE);
-	hook = find_hook("pre-command");
-	if (hook) {
-		argv_array_push(&cp.args, hook);
-		argv_array_pushv(&cp.args, argv);
+	setenv("COMMAND_HOOK_LOCK", "true", 1);
 
-		ret = run_command(&cp);
-		trace_printf("pre command hook for:%s returned:%d\n", argv[0], ret);
-	}
+	// call the hook proc
+	argv_array_pushv(&sargv, argv);
+	ret = run_hook_argv(NULL, "pre-command", sargv.argv);
 
-	// only call the post_command hook if the pre_command hook succeeds
-	if (!ret) {
-		argv_array_pushv(&sargv, argv);
-		atexit(post_command_hook_atexit);
-	}
-
+	if (!ret)
+		run_post_hook = 1;
 	return ret;
 }
+
+static int run_post_command_hook(void)
+{
+	char *lock;
+	int ret = 0;
+
+	/*
+	 * Only run post_command if pre_command succeeded in this process
+	 */
+	if (!run_post_hook)
+		return 0;
+	lock = getenv("COMMAND_HOOK_LOCK");
+	if (!lock || strcmp(lock, "true"))
+		return 0;
+
+	argv_array_pushf(&sargv, "--exit_code=%u", exit_code);
+	ret = run_hook_argv(NULL, "post-command", sargv.argv);
+
+	run_post_hook = 0;
+	argv_array_clear(&sargv);
+	setenv("COMMAND_HOOK_LOCK", "false", 1);
+	return ret;
+}
+
+static void post_command_hook_atexit(void)
+{
+	run_post_command_hook();
+}
+
 
 #define RUN_SETUP		(1<<0)
 #define RUN_SETUP_GENTLY	(1<<1)
@@ -406,6 +414,8 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 	exit_code = status = p->fn(argc, argv, prefix);
 	if (status)
 		return status;
+
+	run_post_command_hook();
 
 	/* Somebody closed stdout? */
 	if (fstat(fileno(stdout), &st))
@@ -628,6 +638,7 @@ static void execv_dashed_external(const char **argv)
 	if (status >= 0 || errno != ENOENT)
 		exit(status);
 
+	run_post_command_hook();
 	argv[0] = tmp;
 
 	strbuf_release(&cmd);
@@ -683,6 +694,7 @@ int cmd_main(int argc, const char **argv)
 	 */
 	atexit(wait_for_pager_atexit);
 	trace_command_performance(argv);
+	atexit(post_command_hook_atexit);
 
 	/*
 	 * "git-xxxx" is the same as "git xxxx", but we obviously:
@@ -715,7 +727,9 @@ int cmd_main(int argc, const char **argv)
 		printf("usage: %s\n\n", git_usage_string);
 		list_common_cmds_help();
 		printf("\n%s\n", _(git_more_info_string));
-		exit(1);
+		exit_code = 1;
+		run_post_command_hook();
+		exit(exit_code);
 	}
 	cmd = argv[0];
 
