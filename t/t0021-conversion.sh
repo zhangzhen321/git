@@ -315,45 +315,41 @@ test_expect_success "filter: smudge empty file" '
 '
 
 test_expect_success "filter: clean filters blocked when under GVFS" '
-	git config core.gvfs 64 &&
+	test_config filter.empty-in-repo.clean "cat >/dev/null" &&
+	test_config filter.empty-in-repo.smudge "echo smudged && cat" &&
+	test_config core.gvfs 64 &&
 
 	echo dead data walking >empty-in-repo &&
-	test_must_fail git add empty-in-repo &&
-
-	git config --unset core.gvfs
+	test_must_fail git add empty-in-repo
 '
 
 test_expect_success "filter: smudge filters blocked when under GVFS" '
-	git config core.gvfs 64 &&
+	test_config filter.empty-in-repo.clean "cat >/dev/null" &&
+	test_config filter.empty-in-repo.smudge "echo smudged && cat" &&
+	test_config core.gvfs 64 &&
 
-	test_must_fail git checkout &&
-
-	git config --unset core.gvfs
+	test_must_fail git checkout
 '
 
 test_expect_success "ident blocked on add when under GVFS" '
-	git config core.gvfs 64 &&
-	git config core.autocrlf false &&
+	test_config core.gvfs 64 &&
+	test_config core.autocrlf false &&
 
 	echo "*.i ident" >.gitattributes &&
 	echo "\$Id\$" > ident.i &&
 
-	test_must_fail git add ident.i &&
-
-	git config --unset core.gvfs
+	test_must_fail git add ident.i
 '
 
 test_expect_success "ident blocked when under GVFS" '
 	git add ident.i &&
 
 	git commit -m "added ident.i" &&
-	git config core.gvfs 64 &&
+	test_config core.gvfs 64 &&
 	rm ident.i &&
 	git checkout -- ident.i &&
 
-	test_must_fail git status &&
-
-	git config --unset core.gvfs
+	test_must_fail git status
 '
 
 test_expect_success 'disable filter with empty override' '
