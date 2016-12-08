@@ -308,6 +308,61 @@ struct argv_array sargv = ARGV_ARRAY_INIT;
 int run_post_hook = 0;
 int exit_code = -1;
 
+static int is_gvfs_repo()
+{
+	wchar_t pwd[MAX_PATH];
+	DWORD dwRet;
+	WIN32_FIND_DATAW FindFileData;
+	HANDLE hFind;
+	wchar_t *lastslash;
+
+	dwRet = GetCurrentDirectoryW(MAX_PATH-7, pwd);
+	if (dwRet == 0 || dwRet > MAX_PATH)
+		die("GetCurrentDirectory failed (%d)\n", GetLastError());
+
+	if ('\\' != pwd[wcslen(pwd) - 1])
+		wcscat(pwd, L"\\");
+	lastslash = pwd + wcslen(pwd) - 1;
+	while (1) {
+		wcscat(lastslash, L".gvfs");
+
+		hFind = FindFirstFileW(pwd, &FindFileData);
+		if (hFind != INVALID_HANDLE_VALUE) {
+			FindClose(hFind);
+			if (FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+				return 1;
+		}
+
+		lastslash--;
+		while ((pwd != lastslash) && (*lastslash != '\\'))
+			lastslash--;
+		if (pwd == lastslash)
+			return 0;
+		*(lastslash + 1) = 0;
+	};
+
+	return 0;
+}
+
+static int run_GVFS_Hooks_argv(const char *const *env, const char *name,
+	const char *const *argv)
+{
+	struct child_process hook = CHILD_PROCESS_INIT;
+
+	if (!is_gvfs_repo())
+		return 0;
+
+	argv_array_push(&hook.args, "GVFS.Hooks.exe");
+	argv_array_push(&hook.args, name);
+	argv_array_pushv(&hook.args, argv);
+	hook.env = env;
+	hook.no_stdin = 1;
+	hook.stdout_to_stderr = 1;
+	hook.silent_exec_failure = 1;
+
+	return run_command(&hook);
+}
+
 static int run_pre_command_hook(const char **argv)
 {
 	char *lock;
@@ -323,9 +378,15 @@ static int run_pre_command_hook(const char **argv)
 		return 0;
 	setenv("COMMAND_HOOK_LOCK", "true", 1);
 
-	// call the hook proc
 	argv_array_pushv(&sargv, argv);
-	ret = run_hook_argv(NULL, "pre-command", sargv.argv);
+	/*
+	 * TODO: This is a temporary hack until we can get config settings
+	 * before executing various git commands without messing up git's state.
+	 * Once we can safely read settings, use the normal hook functions.
+	 *
+	 * ret = run_hook_argv(NULL, "pre-command", sargv.argv);
+	 */
+	ret = run_GVFS_Hooks_argv(NULL, "pre-command", sargv.argv);
 
 	if (!ret)
 		run_post_hook = 1;
@@ -347,7 +408,14 @@ static int run_post_command_hook(void)
 		return 0;
 
 	argv_array_pushf(&sargv, "--exit_code=%u", exit_code);
-	ret = run_hook_argv(NULL, "post-command", sargv.argv);
+	/*
+	 * TODO: This is a temporary hack until we can get config settings
+	 * before executing various git commands without messing up git's state.
+	 * Once we can safely read settings, use the normal hook functions.
+	 *
+	 * ret = run_hook_argv(NULL, "post-command", sargv.argv);
+	 */
+	ret = run_GVFS_Hooks_argv(NULL, "post-command", sargv.argv);
 
 	run_post_hook = 0;
 	argv_array_clear(&sargv);
@@ -357,6 +425,7 @@ static int run_post_command_hook(void)
 
 static void post_command_hook_atexit(void)
 {
+	fflush(NULL);
 	run_post_command_hook();
 }
 
