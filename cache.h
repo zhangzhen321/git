@@ -717,6 +717,8 @@ extern int core_fscache;
 
 extern int core_long_paths;
 
+extern int core_virtualize_objects;
+
 enum branch_track {
 	BRANCH_TRACK_UNSPECIFIED = -1,
 	BRANCH_TRACK_NEVER = 0,
