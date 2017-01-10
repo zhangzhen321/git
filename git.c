@@ -308,7 +308,7 @@ struct argv_array sargv = ARGV_ARRAY_INIT;
 int run_post_hook = 0;
 int exit_code = -1;
 
-static int is_gvfs_repo()
+static int is_gvfs_repo(void)
 {
 	wchar_t pwd[MAX_PATH];
 	DWORD dwRet;
@@ -318,7 +318,7 @@ static int is_gvfs_repo()
 
 	dwRet = GetCurrentDirectoryW(MAX_PATH-7, pwd);
 	if (dwRet == 0 || dwRet > MAX_PATH)
-		die("GetCurrentDirectory failed (%d)\n", GetLastError());
+		die("GetCurrentDirectory failed (%d)\n", (int)GetLastError());
 
 	if ('\\' != pwd[wcslen(pwd) - 1])
 		wcscat(pwd, L"\\");
