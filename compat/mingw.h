@@ -11,6 +11,12 @@ typedef _sigset_t sigset_t;
 #undef _POSIX_THREAD_SAFE_FUNCTIONS
 #endif
 
+extern int core_fscache;
+extern int core_long_paths;
+
+extern int mingw_core_config(const char *var, const char *value);
+#define platform_core_config mingw_core_config
+
 /*
  * things that are not available in header files
  */
@@ -466,6 +472,9 @@ int mingw_raise(int sig);
  * ANSI emulation wrappers
  */
 
+int winansi_isatty(int fd);
+#define isatty winansi_isatty
+
 void winansi_init(void);
 HANDLE winansi_get_osfhandle(int fd);
 
@@ -629,9 +638,6 @@ static inline int xutftowcs_path(wchar_t *wcs, const char *utf)
 	return xutftowcs_path_ex(wcs, utf, MAX_PATH, -1, MAX_PATH, 0);
 }
 
-/* need to re-declare that here as mingw.h is included before cache.h */
-extern int core_long_paths;
-
 /**
  * Simplified file system specific variant of xutftowcsn for Windows APIs
  * that support long paths via '\\?\'-prefix, assumes output buffer size is
@@ -696,6 +702,7 @@ extern CRITICAL_SECTION pinfo_cs;
 #if defined(_MSC_VER)
 
 int msc_startup(int argc, wchar_t **w_argv, wchar_t **w_env);
+extern int msc_main(int argc, const char **argv);
 
 #define main(c,v) dummy_decl_msc_main(void);				\
 int wmain(int my_argc,									\

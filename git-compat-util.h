@@ -51,6 +51,23 @@
 #endif
 #endif
 
+/*
+ * Under certain circumstances Git's source code is cleverer than the C
+ * compiler when the latter warns about some "uninitialized value", e.g. when
+ * a value is both initialized and used under the same condition.
+ *
+ * GCC can be fooled to not spit out this warning by using the construct:
+ * "int value = value;". Other C compilers are not that easily fooled and would
+ * require a #pragma (which is not portable, and would litter the source code).
+ *
+ * To keep things simple, we only fool GCC, and initialize such values instead
+ * when compiling with other C compilers.
+ */
+#ifdef __GNUC__
+#define FAKE_INIT(a, b, c) a b = b
+#else
+#define FAKE_INIT(a, b, c) a b = c
+#endif
 
 /*
  * BUILD_ASSERT_OR_ZERO - assert a build-time dependency, as an expression.
@@ -290,7 +307,8 @@ static inline size_t msvc_iconv(iconv_t conv,
 	const char **inpos, size_t *insize,
 	char **outpos, size_t *outsize)
 {
-	int saved_errno = errno, res;
+	int saved_errno = errno;
+	size_t res;
 
 	errno = ENOENT;
 	res = iconv(conv, inpos, insize, outpos, outsize);
@@ -365,6 +383,14 @@ static inline size_t msvc_iconv(iconv_t conv,
 #endif
 #ifndef _PATH_DEFPATH
 #define _PATH_DEFPATH "/usr/local/bin:/usr/bin:/bin"
+#endif
+
+#ifndef platform_core_config
+static inline int noop_core_config(const char *var, const char *value)
+{
+	return 0;
+}
+#define platform_core_config noop_core_config
 #endif
 
 #ifndef has_dos_drive_prefix
@@ -494,6 +520,9 @@ static inline int const_error(void)
 
 extern void set_die_routine(NORETURN_PTR void (*routine)(const char *err, va_list params));
 extern void set_error_routine(void (*routine)(const char *err, va_list params));
+extern void (*get_error_routine(void))(const char *err, va_list params);
+extern void set_warn_routine(void (*routine)(const char *warn, va_list params));
+extern void (*get_warn_routine(void))(const char *warn, va_list params);
 extern void set_die_is_recursing_routine(int (*routine)(void));
 extern void set_error_handle(FILE *);
 
@@ -1030,6 +1059,14 @@ void git_qsort(void *base, size_t nmemb, size_t size,
 #define qsort git_qsort
 #endif
 
+#define QSORT(base, n, compar) sane_qsort((base), (n), sizeof(*(base)), compar)
+static inline void sane_qsort(void *base, size_t nmemb, size_t size,
+			      int(*compar)(const void *, const void *))
+{
+	if (nmemb > 1)
+		qsort(base, nmemb, size, compar);
+}
+
 #ifndef REG_STARTEND
 #error "Git requires REG_STARTEND support. Compile with NO_REGEX=NeedsStartEnd"
 #endif
@@ -1158,6 +1195,6 @@ struct tm *git_gmtime_r(const time_t *, struct tm *);
 #define enable_fscache(x) /* noop */
 #endif
 
-#endif
-
 extern int cmd_main(int, const char **);
+
+#endif

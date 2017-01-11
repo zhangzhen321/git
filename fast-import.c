@@ -1460,9 +1460,9 @@ static void mktree(struct tree_content *t, int v, struct strbuf *b)
 	unsigned int i;
 
 	if (!v)
-		qsort(t->entries,t->entry_count,sizeof(t->entries[0]),tecmp0);
+		QSORT(t->entries, t->entry_count, tecmp0);
 	else
-		qsort(t->entries,t->entry_count,sizeof(t->entries[0]),tecmp1);
+		QSORT(t->entries, t->entry_count, tecmp1);
 
 	for (i = 0; i < t->entry_count; i++) {
 		if (t->entries[i]->versions[v].mode)
@@ -2992,7 +2992,7 @@ static void cat_blob(struct object_entry *oe, unsigned char sha1[20])
 
 static void parse_get_mark(const char *p)
 {
-	struct object_entry *oe = oe;
+	FAKE_INIT(struct object_entry *, oe, NULL);
 	char output[42];
 
 	/* get-mark SP <object> LF */
@@ -3009,7 +3009,7 @@ static void parse_get_mark(const char *p)
 
 static void parse_cat_blob(const char *p)
 {
-	struct object_entry *oe = oe;
+	FAKE_INIT(struct object_entry *, oe, NULL);
 	unsigned char sha1[20];
 
 	/* cat-blob SP <object> LF */
