@@ -842,6 +842,9 @@ static int git_default_core_config(const char *var, const char *value)
 		return 0;
 	}
 
+	if (!strcmp(var, "core.disambiguate"))
+		return set_disambiguate_hint_config(var, value);
+
 	if (!strcmp(var, "core.loosecompression")) {
 		int level = git_config_int(var, value);
 		if (level == -1)
@@ -928,9 +931,6 @@ static int git_default_core_config(const char *var, const char *value)
 		return 0;
 	}
 
-	if (!strcmp(var, "core.pager"))
-		return git_config_string(&pager_program, var, value);
-
 	if (!strcmp(var, "core.editor"))
 		return git_config_string(&editor_program, var, value);
 
@@ -1005,31 +1005,13 @@ static int git_default_core_config(const char *var, const char *value)
 		return 0;
 	}
 
-	if (!strcmp(var, "core.hidedotfiles")) {
-		if (value && !strcasecmp(value, "dotgitonly"))
-			hide_dotfiles = HIDE_DOTFILES_DOTGITONLY;
-		else
-			hide_dotfiles = git_config_bool(var, value);
-		return 0;
-	}
-
-	if (!strcmp(var, "core.fscache")) {
-		core_fscache = git_config_bool(var, value);
-		return 0;
-	}
-
-	if (!strcmp(var, "core.longpaths")) {
-		core_long_paths = git_config_bool(var, value);
-		return 0;
-	}
-
 	if (!strcmp(var, "core.virtualizeobjects")) {
 		core_virtualize_objects = git_config_bool(var, value);
 		return 0;
 	}
 
 	/* Add other config variables here and to Documentation/config.txt. */
-	return 0;
+	return platform_core_config(var, value);
 }
 
 static int git_default_i18n_config(const char *var, const char *value)
@@ -1310,7 +1292,7 @@ static int do_git_config_sequence(config_fn_t fn, void *data)
 	int ret = 0;
 	char *xdg_config = xdg_config_home("config");
 	char *user_config = expand_user_path("~/.gitconfig");
-	char *repo_config = git_pathdup("config");
+	char *repo_config = have_git_dir() ? git_pathdup("config") : NULL;
 
 	current_parsing_scope = CONFIG_SCOPE_SYSTEM;
 	if (git_config_system()) {

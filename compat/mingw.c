@@ -228,6 +228,46 @@ static int retry_ask_yes_no(int *tries, const char *format, ...)
 	return result;
 }
 
+/* Windows only */
+enum hide_dotfiles_type {
+	HIDE_DOTFILES_FALSE = 0,
+	HIDE_DOTFILES_TRUE,
+	HIDE_DOTFILES_DOTGITONLY
+};
+
+static enum hide_dotfiles_type hide_dotfiles = HIDE_DOTFILES_DOTGITONLY;
+static char *unset_environment_variables;
+int core_fscache;
+int core_long_paths;
+
+int mingw_core_config(const char *var, const char *value)
+{
+	if (!strcmp(var, "core.hidedotfiles")) {
+		if (value && !strcasecmp(value, "dotgitonly"))
+			hide_dotfiles = HIDE_DOTFILES_DOTGITONLY;
+		else
+			hide_dotfiles = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.fscache")) {
+		core_fscache = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.longpaths")) {
+		core_long_paths = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.unsetenvvars")) {
+		free(unset_environment_variables);
+		unset_environment_variables = xstrdup(value);
+		return 0;
+	}
+
+	return 0;
+}
 
 DECLARE_PROC_ADDR(kernel32.dll, BOOL, CreateSymbolicLinkW, LPCWSTR, LPCWSTR, DWORD);
 
@@ -1313,9 +1353,11 @@ static wchar_t *make_environment_block(char **deltaenv)
 	for (j = 0; j < nr_wenv; j++) {
 		const wchar_t *v_j = my_wenviron[j];
 		wchar_t *v_j_eq = wcschr(v_j, L'=');
+		int len_j_eq, len_j;
+
 		if (!v_j_eq)
 			continue; /* should not happen */
-		int len_j_eq = v_j_eq + 1 - v_j; /* length(v_j) including '=' */
+		len_j_eq = v_j_eq + 1 - v_j; /* length(v_j) including '=' */
 
 		/* lookup v_j in list of to-delete vars */
 		for (k_del = 0; k_del < nr_delta_del; k_del++) {
@@ -1330,7 +1372,7 @@ static wchar_t *make_environment_block(char **deltaenv)
 		}
 
 		/* item is unique, add it to results. */
-		int len_j = wcslen(v_j);
+		len_j = wcslen(v_j);
 		memcpy(w_ins, v_j, len_j * sizeof(wchar_t));
 		w_ins += len_j + 1;
 
@@ -1396,8 +1438,28 @@ static wchar_t *make_environment_block(char **deltaenv)
 	free(tmpenv);
 	return wenvblk;
 }
-
 #endif
+
+static void do_unset_environment_variables(void)
+{
+	static int done;
+	char *p = unset_environment_variables;
+
+	if (done || !p)
+		return;
+	done = 1;
+
+	for (;;) {
+		char *comma = strchr(p, ',');
+
+		if (comma)
+			*comma = '\0';
+		unsetenv(p);
+		if (!comma)
+			break;
+		p = comma + 1;
+	}
+}
 
 struct pinfo_t {
 	struct pinfo_t *next;
@@ -1417,9 +1479,12 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 	wchar_t wcmd[MAX_PATH], wdir[MAX_PATH], *wargs, *wenvblk = NULL;
 	unsigned flags = CREATE_UNICODE_ENVIRONMENT;
 	BOOL ret;
+	HANDLE cons;
+
+	do_unset_environment_variables();
 
 	/* Determine whether or not we are associated to a console */
-	HANDLE cons = CreateFile("CONOUT$", GENERIC_WRITE,
+	cons = CreateFile("CONOUT$", GENERIC_WRITE,
 			FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
 			FILE_ATTRIBUTE_NORMAL, NULL);
 	if (cons == INVALID_HANDLE_VALUE) {
@@ -1999,7 +2064,8 @@ static void ensure_socket_initialization(void)
 			WSAGetLastError());
 
 	for (name = libraries; *name; name++) {
-		ipv6_dll = LoadLibrary(*name);
+		ipv6_dll = LoadLibraryExA(*name, NULL,
+					  LOAD_LIBRARY_SEARCH_SYSTEM32);
 		if (!ipv6_dll)
 			continue;
 
@@ -2571,12 +2637,6 @@ int readlink(const char *path, char *buf, size_t bufsiz)
 	char tmpbuf[MAX_LONG_PATH];
 	int len;
 
-	/* fail if symlinks are disabled */
-	if (!has_symlinks) {
-		errno = ENOSYS;
-		return -1;
-	}
-
 	if (xutftowcs_long_path(wpath, path) < 0)
 		return -1;
 
@@ -2952,7 +3012,67 @@ static char *wcstoutfdup_startup(char *buffer, const wchar_t *wcs, size_t len)
 	return memcpy(malloc_startup(len), buffer, len);
 }
 
+static void maybe_redirect_std_handle(const wchar_t *key, DWORD std_id, int fd,
+				      DWORD desired_access, DWORD flags)
+{
+	DWORD create_flag = fd ? OPEN_ALWAYS : OPEN_EXISTING;
+	wchar_t buf[MAX_LONG_PATH];
+	DWORD max = ARRAY_SIZE(buf);
+	HANDLE handle;
+	DWORD ret = GetEnvironmentVariableW(key, buf, max);
+
+	if (!ret || ret >= max)
+		return;
+
+	/* make sure this does not leak into child processes */
+	SetEnvironmentVariableW(key, NULL);
+	if (!wcscmp(buf, L"off")) {
+		close(fd);
+		handle = GetStdHandle(std_id);
+		if (handle != INVALID_HANDLE_VALUE)
+			CloseHandle(handle);
+		return;
+	}
+	if (std_id == STD_ERROR_HANDLE && !wcscmp(buf, L"2>&1")) {
+		handle = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (handle == INVALID_HANDLE_VALUE) {
+			close(fd);
+			handle = GetStdHandle(std_id);
+			if (handle != INVALID_HANDLE_VALUE)
+				CloseHandle(handle);
+		} else {
+			int new_fd = _open_osfhandle((intptr_t)handle, O_BINARY);
+			SetStdHandle(std_id, handle);
+			dup2(new_fd, fd);
+			/* do *not* close the new_fd: that would close stdout */
+		}
+		return;
+	}
+	handle = CreateFileW(buf, desired_access, 0, NULL, create_flag,
+			     flags, NULL);
+	if (handle != INVALID_HANDLE_VALUE) {
+		int new_fd = _open_osfhandle((intptr_t)handle, O_BINARY);
+		SetStdHandle(std_id, handle);
+		dup2(new_fd, fd);
+		close(new_fd);
+	}
+}
+
+static void maybe_redirect_std_handles(void)
+{
+	maybe_redirect_std_handle(L"GIT_REDIRECT_STDIN", STD_INPUT_HANDLE, 0,
+				  GENERIC_READ, FILE_ATTRIBUTE_NORMAL);
+	maybe_redirect_std_handle(L"GIT_REDIRECT_STDOUT", STD_OUTPUT_HANDLE, 1,
+				  GENERIC_WRITE, FILE_ATTRIBUTE_NORMAL);
+	maybe_redirect_std_handle(L"GIT_REDIRECT_STDERR", STD_ERROR_HANDLE, 2,
+				  GENERIC_WRITE, FILE_FLAG_NO_BUFFERING);
+}
+
 #if defined(_MSC_VER)
+
+#ifdef _DEBUG
+#include <crtdbg.h>
+#endif
 
 /*
  * This routine sits between wmain() and "main" in git.exe.
@@ -2976,11 +3096,17 @@ int msc_startup(int argc, wchar_t **w_argv, wchar_t **w_env)
 	char **my_utf8_argv = NULL, **save = NULL;
 	char *buffer = NULL;
 	int maxlen;
-	int k, x;
+	int k, exit_status;
+
+#ifdef _DEBUG
+	_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_DEBUG);
+#endif
 
 #ifdef USE_MSVC_CRTDBG
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
+
+	maybe_redirect_std_handles();
 
 	/* determine size of argv conversion buffer */
 	maxlen = wcslen(_wpgmptr);
@@ -3008,6 +3134,8 @@ int msc_startup(int argc, wchar_t **w_argv, wchar_t **w_env)
 	/* fix Windows specific environment settings */
 	setup_windows_environment();
 
+	unset_environment_variables = xstrdup("PERL5LIB");
+
 	/* initialize critical section for waitpid pinfo_t list */
 	InitializeCriticalSection(&pinfo_cs);
 	InitializeCriticalSection(&phantom_symlinks_cs);
@@ -3025,7 +3153,7 @@ int msc_startup(int argc, wchar_t **w_argv, wchar_t **w_env)
 	current_directory_len = GetCurrentDirectoryW(0, NULL);
 
 	/* invoke the real main() using our utf8 version of argv. */
-	int exit_status = msc_main(argc, my_utf8_argv);
+	exit_status = msc_main(argc, my_utf8_argv);
 
 	for (k = 0; k < argc; k++)
 		free(save[k]);
@@ -3043,6 +3171,8 @@ void mingw_startup(void)
 	char *buffer;
 	wchar_t **wenv, **wargv;
 	_startupinfo si;
+
+	maybe_redirect_std_handles();
 
 	/* get wide char arguments and environment */
 	si.newmode = 0;
@@ -3083,6 +3213,8 @@ void mingw_startup(void)
 
 	/* fix Windows specific environment settings */
 	setup_windows_environment();
+
+	unset_environment_variables = xstrdup("PERL5LIB");
 
 	/*
 	 * Avoid a segmentation fault when cURL tries to set the CHARSET

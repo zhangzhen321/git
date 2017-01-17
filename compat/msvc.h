@@ -6,6 +6,10 @@
 #include <malloc.h>
 #include <io.h>
 
+#pragma warning(disable: 4018) /* signed/unsigned comparison */
+#pragma warning(disable: 4244) /* type conversion, possible loss of data */
+#pragma warning(disable: 4090) /* 'function' : different 'const' qualifiers (ALLOC_GROW etc.)*/
+
 /* porting function */
 #define inline __inline
 #define __inline__ __inline
@@ -25,9 +29,6 @@ static __inline int strcasecmp (const char *s1, const char *s2)
 #undef ERROR
 
 #define ftello _ftelli64
-
-#define isatty msc_isatty
-int msc_isatty(int);
 
 typedef int sigset_t;
 /* open for reading, writing, or both (not in fcntl.h) */
