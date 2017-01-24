@@ -356,18 +356,6 @@ static int crlf_to_worktree(const char *path, const char *src, size_t len,
 	if (!will_convert_lf_to_crlf(len, &stats, crlf_action))
 		return 0;
 
-	if (crlf_action == CRLF_AUTO || crlf_action == CRLF_AUTO_INPUT || crlf_action == CRLF_AUTO_CRLF) {
-		if (crlf_action == CRLF_AUTO_INPUT || crlf_action == CRLF_AUTO_CRLF) {
-			/* If we have any CR or CRLF line endings, we do not touch it */
-			/* This is the new safer autocrlf-handling */
-			if (stats.lonecr || stats.crlf )
-				return 0;
-		}
-
-		if (convert_is_binary(len, &stats))
-			return 0;
-	}
-
 	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
 		die("CRLF conversions not supported when running under GVFS");
 
