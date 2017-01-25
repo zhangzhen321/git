@@ -864,7 +864,7 @@ const char *find_hook(const char *name)
 }
 
 int run_hook_argv(const char *const *env, const char *name,
-		  const char *const *argv)
+		  const char **argv)
 {
 	struct child_process hook = CHILD_PROCESS_INIT;
 	const char *p;

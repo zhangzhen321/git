@@ -49,10 +49,8 @@ void argv_array_pushl(struct argv_array *array, ...)
 	va_end(ap);
 }
 
-void argv_array_pushv(struct argv_array *array, const char *const *argv)
+void argv_array_pushv(struct argv_array *array, const char **argv)
 {
-	if (!argv)
-		return;
 	for (; *argv; argv++)
 		argv_array_push(array, *argv);
 }
