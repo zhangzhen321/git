@@ -1817,19 +1817,16 @@ int read_index_from(struct index_state *istate, const char *path)
 {
 	struct split_index *split_index;
 	int ret;
-	uint64_t start;
 
 	/* istate->initialized covers both .git/index and .git/sharedindex.xxx */
 	if (istate->initialized)
 		return istate->cache_nr;
 
-	start = getnanotime();
 	ret = do_read_index(istate, path, 0);
 
 	split_index = istate->split_index;
 	if (!split_index || is_null_sha1(split_index->base_sha1)) {
 		post_read_index_from(istate);
-		trace_performance_since(start, "read_index_from");
 		return ret;
 	}
 
@@ -1848,7 +1845,6 @@ int read_index_from(struct index_state *istate, const char *path)
 		    sha1_to_hex(split_index->base->sha1));
 	merge_base_index(istate);
 	post_read_index_from(istate);
-	trace_performance_since(start, "read_index_from");
 	return ret;
 }
 
@@ -2361,17 +2357,13 @@ static int write_shared_index(struct index_state *istate,
 int write_locked_index(struct index_state *istate, struct lock_file *lock,
 		       unsigned flags)
 {
-	uint64_t start = getnanotime();
 	struct split_index *si = istate->split_index;
-	int ret;
 
 	if (!si || alternate_index_output ||
 	    (istate->cache_changed & ~EXTMASK)) {
 		if (si)
 			hashclr(si->base_sha1);
-		ret = do_write_locked_index(istate, lock, flags);
-		trace_performance_since(start, "write_locked_index");
-		return ret;
+		return do_write_locked_index(istate, lock, flags);
 	}
 
 	if (getenv("GIT_TEST_SPLIT_INDEX")) {
@@ -2380,16 +2372,12 @@ int write_locked_index(struct index_state *istate, struct lock_file *lock,
 			istate->cache_changed |= SPLIT_INDEX_ORDERED;
 	}
 	if (istate->cache_changed & SPLIT_INDEX_ORDERED) {
-		ret = write_shared_index(istate, lock, flags);
-		if (ret) {
-			trace_performance_since(start, "write_locked_index");
+		int ret = write_shared_index(istate, lock, flags);
+		if (ret)
 			return ret;
-		}
 	}
 
-	ret = write_split_index(istate, lock, flags);
-	trace_performance_since(start, "write_locked_index");
-	return ret;
+	return write_split_index(istate, lock, flags);
 }
 
 /*
