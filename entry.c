@@ -77,8 +77,8 @@ static int create_file(const char *path, unsigned int mode)
 {
 	mode = (mode & 0100) ? 0777 : 0666;
 	/*
-	* BUG BUG: Calling open here with O_EXCL causes problems with GVFS 
-	* as we can't delete the file until we have proper tombstones for deleted files.  
+	* BUG BUG: Calling open here with O_EXCL causes problems with GVFS
+	* as we can't delete the file until we have proper tombstones for deleted files.
 	* TEMPORARILY remove this flag until we have the right, long term fix.
 	*
 	* https://mseng.visualstudio.com/VSOnline/_workitems/edit/597008
@@ -297,7 +297,7 @@ int checkout_entry(struct cache_entry *ce,
 		 * we have proper tombstones for deleted files.  TEMPORARILY
 		 * remove this call until we have the right, long term fix.
 		 *
-		 * https://mseng.visualstudio.com/VSOnline/_workitems/edit/597008 
+		 * https://mseng.visualstudio.com/VSOnline/_workitems/edit/597008
 		 *
 		 */
 		  else if (!core_gvfs && unlink(path.buf))

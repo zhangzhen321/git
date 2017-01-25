@@ -1999,7 +1999,7 @@ cleanup:
 		string_list_clear(re_merge, 0);
 		string_list_clear(re_head, 0);
 		string_list_clear(entries, 1);
-		
+
 		hashmap_free(&o->current_file_dir_set, 1);
 
 		free(re_merge);
