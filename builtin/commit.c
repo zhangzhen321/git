@@ -182,12 +182,11 @@ static int opt_parse_m(const struct option *opt, const char *arg, int unset)
 
 static int opt_parse_rename_score(const struct option *opt, const char *arg, int unset)
 {
+	const char **value = opt->value;
 	if (arg != NULL && *arg == '=')
 		arg = arg + 1;
 
-	char **value = opt->value;
 	*value = arg;
-
 	return 0;
 }
 
@@ -1361,7 +1360,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	static int no_lock_index = 0;
 	static int no_renames = 0;
 	static int no_breaks = 0;
-	static char *rename_score_arg;
+	static const char *rename_score_arg;
 	static struct wt_status s;
 
 	int fd;
