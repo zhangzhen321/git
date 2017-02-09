@@ -814,7 +814,7 @@ core.gvfs::
 		Only works with pathnames and directories (no wildcards, negatives, tokens, etc).
 	GVFS_MISSING_OK::
 		Bit value 4
-		Normally git write-tree ensures that the objects referenced by the 
+		Normally git write-tree ensures that the objects referenced by the
 		directory exist in the object database. This option disables this check.
 	GVFS_NO_DELETE_OUTSIDE_SPARSECHECKOUT::
 		Bit value 8
@@ -836,18 +836,18 @@ core.gvfs::
 		the upload pack so that extraneous objects don't get downloaded.
 	GVFS_LOWER_DEFAULT_SLOP::
 		Bit value 32
-		Slop is a value used to get a certain number of uninteresting 
+		Slop is a value used to get a certain number of uninteresting
 		parent commits when walking the commit graph.  The default for this
 		is 5.  During some commands we do not want to traverse the commit
 		graph for uninteresting commits.  This flag will lower the default
 		slop value to 1.
 	GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS::
 		Bit value 64
-		With a virtual file system we only know the file size before any 
+		With a virtual file system we only know the file size before any
 		CRLF or smudge/clean filters processing is done on the client.
-		To prevent file corruption due to truncation or expansion with 
+		To prevent file corruption due to truncation or expansion with
 		garbage at the end, these filters must not run when the file
-		is first accessed and brought down to the client. Git.exe can't 
+		is first accessed and brought down to the client. Git.exe can't
 		currently tell the first access vs subsequent accesses so this
 		flag just blocks them from occurring at all.
 --

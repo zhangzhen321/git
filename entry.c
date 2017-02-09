@@ -76,15 +76,7 @@ static void remove_subtree(struct strbuf *path)
 static int create_file(const char *path, unsigned int mode)
 {
 	mode = (mode & 0100) ? 0777 : 0666;
-	/*
-	* BUG BUG: Calling open here with O_EXCL causes problems with GVFS 
-	* as we can't delete the file until we have proper tombstones for deleted files.  
-	* TEMPORARILY remove this flag until we have the right, long term fix.
-	*
-	* https://mseng.visualstudio.com/VSOnline/_workitems/edit/597008
-	*
-	*/
-	return open(path, O_WRONLY | O_CREAT | (!core_gvfs ? O_EXCL: O_TRUNC), mode);
+	return open(path, O_WRONLY | O_CREAT | O_EXCL, mode);
 }
 
 static void *read_blob_entry(const struct cache_entry *ce, unsigned long *size)
@@ -291,17 +283,8 @@ int checkout_entry(struct cache_entry *ce,
 			if (!state->force)
 				return error("%s is a directory", path.buf);
 			remove_subtree(&path);
-		}
-		/*
-		 * BUG BUG: Calling unlink here causes problems with GVFS until
-		 * we have proper tombstones for deleted files.  TEMPORARILY
-		 * remove this call until we have the right, long term fix.
-		 *
-		 * https://mseng.visualstudio.com/VSOnline/_workitems/edit/597008 
-		 *
-		 */
-		  else if (!core_gvfs && unlink(path.buf))
-			  return error_errno("unable to unlink old '%s'", path.buf);
+		} else if (unlink(path.buf))
+			return error_errno("unable to unlink old '%s'", path.buf);
 	} else if (state->not_new)
 		return 0;
 

@@ -368,7 +368,7 @@ static int run_GVFS_Hooks_argv(const char *const *env, const char *name,
 
 	argv_array_push(&hook.args, "GVFS.Hooks.exe");
 	argv_array_push(&hook.args, name);
-	argv_array_pushv(&hook.args, argv);
+	argv_array_pushv(&hook.args, (const char **)argv);
 	hook.env = env;
 	hook.no_stdin = 1;
 

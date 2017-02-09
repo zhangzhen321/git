@@ -1121,7 +1121,6 @@ static int clear_ce_flags(struct cache_entry **cache, int nr,
 				el, 0);
 }
 
-
 /*
  * Set/Clear CE_NEW_SKIP_WORKTREE according to $GIT_DIR/info/sparse-checkout
  */
