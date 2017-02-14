@@ -110,13 +110,7 @@ void mark_parents_uninteresting(struct commit *commit)
 			 * it is popped next time around, we won't be trying
 			 * to parse it and get an error.
 			 */
-
-			/*
-			 * If it is an uninteresting commit we do not need to
-			 * check if there is a object file when using a virtual
-			 * file system.
-			 */
-			if (!core_gvfs && !has_object_file(&commit->object.oid))
+			if (!has_object_file(&commit->object.oid))
 				commit->object.parsed = 1;
 
 			if (commit->object.flags & UNINTERESTING)
@@ -887,6 +881,9 @@ static void cherry_pick_list(struct commit_list *list, struct rev_info *revs)
 	free_patch_ids(&ids);
 }
 
+/* How many extra uninteresting commits we want to see.. */
+#define SLOP 5
+
 static int still_interesting(struct commit_list *src, unsigned long date, int slop,
 			     struct commit **interesting_cache)
 {
@@ -901,14 +898,14 @@ static int still_interesting(struct commit_list *src, unsigned long date, int sl
 	 * before the source list? Definitely _not_ done.
 	 */
 	if (date <= src->item->date)
-		return default_slop;
+		return SLOP;
 
 	/*
 	 * Does the source list still have interesting commits in
 	 * it? Definitely not done..
 	 */
 	if (!everybody_uninteresting(src, interesting_cache))
-		return default_slop;
+		return SLOP;
 
 	/* Ok, we're closing in.. */
 	return slop-1;
@@ -1020,7 +1017,7 @@ static void limit_left_right(struct commit_list *list, struct rev_info *revs)
 
 static int limit_list(struct rev_info *revs)
 {
-	int slop = default_slop;
+	int slop = SLOP;
 	unsigned long date = ~0ul;
 	struct commit_list *list = revs->commits;
 	struct commit_list *newlist = NULL;

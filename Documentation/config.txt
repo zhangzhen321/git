@@ -836,11 +836,7 @@ core.gvfs::
 		the upload pack so that extraneous objects don't get downloaded.
 	GVFS_LOWER_DEFAULT_SLOP::
 		Bit value 32
-		Slop is a value used to get a certain number of uninteresting
-		parent commits when walking the commit graph.  The default for this
-		is 5.  During some commands we do not want to traverse the commit
-		graph for uninteresting commits.  This flag will lower the default
-		slop value to 1.
+		This bit value is no longer used and is available for use.
 	GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS::
 		Bit value 64
 		With a virtual file system we only know the file size before any

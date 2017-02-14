@@ -982,14 +982,6 @@ static void wt_longstatus_print_tracking(struct wt_status *s)
 	if (!skip_prefix(s->branch, "refs/heads/", &branch_name))
 		return;
 	branch = branch_get(branch_name);
-
-	/*
-	 * Lower the number of uninteresting commits that will be
-	 * traversed since the format tracking info is only looking
-	 * at the count of interesting commits.
-	 */
-	if (gvfs_config_is_set(GVFS_LOWER_DEFAULT_SLOP))
-		default_slop = 1;
 	if (!format_tracking_info(branch, &sb))
 		return;
 
