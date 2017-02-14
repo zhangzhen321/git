@@ -30,9 +30,6 @@ struct log_info;
 struct string_list;
 struct saved_parents;
 
-/* How many extra uninteresting commits we want to see.. */
-extern int default_slop;
-
 struct rev_cmdline_info {
 	unsigned int nr;
 	unsigned int alloc;
