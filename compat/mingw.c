@@ -496,9 +496,7 @@ int mingw_mkdir(const char *path, int mode)
 {
 	int ret;
 	wchar_t wpath[MAX_LONG_PATH];
-	/* CreateDirectoryW path limit is 248 (MAX_PATH - 8.3 file name) */
-	if (xutftowcs_path_ex(wpath, path, MAX_LONG_PATH, -1, 248,
-			core_long_paths) < 0)
+	if (xutftowcs_long_path(wpath, path) < 0)
 		return -1;
 
 	ret = _wmkdir(wpath);
@@ -2913,6 +2911,9 @@ static void setup_windows_environment(void)
 	 */
 	if (!(tmp = getenv("MSYS")) || !strstr(tmp, "winsymlinks:nativestrict"))
 		has_symlinks = 0;
+
+	if (!getenv("LC_ALL") && !getenv("LC_CTYPE") && !getenv("LANG"))
+		setenv("LC_CTYPE", "C", 1);
 }
 
 int handle_long_path(wchar_t *path, int len, int max_path, int expand)

@@ -66,7 +66,7 @@ test_expect_success 'checkout does not delete items outside the sparse checkout 
 	test_path_is_file e
 '
 
-test_expect_success 'no unnecessary opendir() with fscache' '
+test_expect_success MINGW 'no unnecessary opendir() with fscache' '
 	git clone . fscache-test &&
 	(
 		cd fscache-test &&

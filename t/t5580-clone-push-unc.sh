@@ -40,7 +40,9 @@ test_expect_success push '
 		git checkout -b to-push &&
 		test_commit to-push &&
 		git push origin HEAD
-	)
+	) &&
+	rev="$(git -C clone rev-parse --verify refs/heads/to-push)" &&
+	test "$rev" = "$(git rev-parse --verify refs/heads/to-push)"
 '
 
 test_expect_success 'unc alternates' '
