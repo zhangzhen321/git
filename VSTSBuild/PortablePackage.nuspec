@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>GitForWindows.GVFS.Portable</id>
+    <version>0.0.0.0</version>
+    <title>Git for Windows (GVFS) Portable Package</title>
+    <authors>Microsoft</authors>
+    <owners>Microsoft</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Contains the portable package for Git for Windows, customized for GVFS</description>
+    <copyright>Copyright 2017 Microsoft Corporation</copyright>
+  </metadata>
+  <files>
+    <file src="..\artifacts\PortableGit-*.exe" target="tools" />
+  </files>
+</package>
