@@ -39,7 +39,7 @@ static struct dir_entry *find_dir_entry(struct index_state *istate,
 }
 
 static struct dir_entry *hash_dir_entry(struct index_state *istate,
-		struct cache_entry *ce, int namelen, struct dir_entry **p_previous_dir)
+		struct cache_entry *ce, int namelen)
 {
 	/*
 	 * Throw each directory component in the hash for quick lookup
@@ -70,21 +70,9 @@ static struct dir_entry *hash_dir_entry(struct index_state *istate,
 	namelen--;
 
 	/* lookup existing entry for that directory */
-	if (p_previous_dir && *p_previous_dir
-		&& namelen == (*p_previous_dir)->namelen
-		&& memcmp(ce->name, (*p_previous_dir)->name, namelen) == 0) {
-		/*
-		 * When our caller is sequentially iterating thru the index,
-		 * items in the same directory will be sequential, and therefore
-		 * refer to the same dir_entry.
-		 */
-		dir = *p_previous_dir;
-	} else {
-		if (!use_precomputed_dir_hash)
-			hash = memihash(ce->name, namelen);
-		dir = find_dir_entry__hash(istate, ce->name, namelen, hash);
-	}
-
+	if (!use_precomputed_dir_hash)
+		hash = memihash(ce->name, namelen);
+	dir = find_dir_entry__hash(istate, ce->name, namelen, hash);
 	if (!dir) {
 		/* not found, create it and add to hash table */
 		FLEX_ALLOC_MEM(dir, name, ce->name, namelen);
@@ -93,20 +81,15 @@ static struct dir_entry *hash_dir_entry(struct index_state *istate,
 		hashmap_add(&istate->dir_hash, dir);
 
 		/* recursively add missing parent directories */
-		dir->parent = hash_dir_entry(istate, ce, namelen, NULL);
+		dir->parent = hash_dir_entry(istate, ce, namelen);
 	}
-
-	if (p_previous_dir)
-		*p_previous_dir = dir;
-
 	return dir;
 }
 
-static void add_dir_entry(struct index_state *istate, struct cache_entry *ce,
-	struct dir_entry **p_previous_dir)
+static void add_dir_entry(struct index_state *istate, struct cache_entry *ce)
 {
 	/* Add reference to the directory entry (and parents if 0). */
-	struct dir_entry *dir = hash_dir_entry(istate, ce, ce_namelen(ce), p_previous_dir);
+	struct dir_entry *dir = hash_dir_entry(istate, ce, ce_namelen(ce));
 	while (dir && !(dir->nr++))
 		dir = dir->parent;
 }
@@ -117,7 +100,7 @@ static void remove_dir_entry(struct index_state *istate, struct cache_entry *ce)
 	 * Release reference to the directory entry. If 0, remove and continue
 	 * with parent directory.
 	 */
-	struct dir_entry *dir = hash_dir_entry(istate, ce, ce_namelen(ce), NULL);
+	struct dir_entry *dir = hash_dir_entry(istate, ce, ce_namelen(ce));
 	while (dir && !(--dir->nr)) {
 		struct dir_entry *parent = dir->parent;
 		hashmap_remove(&istate->dir_hash, dir, NULL);
@@ -126,8 +109,7 @@ static void remove_dir_entry(struct index_state *istate, struct cache_entry *ce)
 	}
 }
 
-static void hash_index_entry(struct index_state *istate, struct cache_entry *ce,
-	struct dir_entry **p_previous_dir)
+static void hash_index_entry(struct index_state *istate, struct cache_entry *ce)
 {
 	unsigned int h;
 
@@ -144,7 +126,7 @@ static void hash_index_entry(struct index_state *istate, struct cache_entry *ce,
 	hashmap_add(&istate->name_hash, ce);
 
 	if (ignore_case)
-		add_dir_entry(istate, ce, p_previous_dir);
+		add_dir_entry(istate, ce);
 }
 
 static int cache_entry_cmp(const struct cache_entry *ce1,
@@ -160,7 +142,6 @@ static int cache_entry_cmp(const struct cache_entry *ce1,
 
 static void lazy_init_name_hash(struct index_state *istate)
 {
-	struct dir_entry *previous_dir = NULL;
 	int nr;
 	uint64_t start;
 
@@ -172,7 +153,7 @@ static void lazy_init_name_hash(struct index_state *istate)
 	hashmap_init(&istate->dir_hash, (hashmap_cmp_fn) dir_entry_cmp,
 			istate->cache_nr);
 	for (nr = 0; nr < istate->cache_nr; nr++)
-		hash_index_entry(istate, istate->cache[nr], &previous_dir);
+		hash_index_entry(istate, istate->cache[nr]);
 	istate->name_hash_initialized = 1;
 	trace_performance_since(start, "lazy_init_name_hash");
 }
@@ -180,7 +161,7 @@ static void lazy_init_name_hash(struct index_state *istate)
 void add_name_hash(struct index_state *istate, struct cache_entry *ce)
 {
 	if (istate->name_hash_initialized)
-		hash_index_entry(istate, ce, NULL);
+		hash_index_entry(istate, ce);
 }
 
 void remove_name_hash(struct index_state *istate, struct cache_entry *ce)
