@@ -23,19 +23,13 @@ static int dir_entry_cmp(const struct dir_entry *e1,
 			name ? name : e2->name, e1->namelen);
 }
 
-static struct dir_entry *find_dir_entry__hash(struct index_state *istate,
-		const char *name, unsigned int namelen, unsigned int hash)
-{
-	struct dir_entry key;
-	hashmap_entry_init(&key, hash);
-	key.namelen = namelen;
-	return hashmap_get(&istate->dir_hash, &key, name);
-}
-
 static struct dir_entry *find_dir_entry(struct index_state *istate,
 		const char *name, unsigned int namelen)
 {
-	return find_dir_entry__hash(istate, name, namelen, memihash(name,namelen));
+	struct dir_entry key;
+	hashmap_entry_init(&key, memihash(name, namelen));
+	key.namelen = namelen;
+	return hashmap_get(&istate->dir_hash, &key, name);
 }
 
 static struct dir_entry *hash_dir_entry(struct index_state *istate,
@@ -49,7 +43,6 @@ static struct dir_entry *hash_dir_entry(struct index_state *istate,
 	 * in index_state.name_hash (as ordinary cache_entries).
 	 */
 	struct dir_entry *dir;
-	unsigned int hash;
 
 	/* get length of parent directory */
 	while (namelen > 0 && !is_dir_sep(ce->name[namelen - 1]))
@@ -59,12 +52,11 @@ static struct dir_entry *hash_dir_entry(struct index_state *istate,
 	namelen--;
 
 	/* lookup existing entry for that directory */
-	hash = memihash(ce->name, namelen);
-	dir = find_dir_entry__hash(istate, ce->name, namelen, hash);
+	dir = find_dir_entry(istate, ce->name, namelen);
 	if (!dir) {
 		/* not found, create it and add to hash table */
 		FLEX_ALLOC_MEM(dir, name, ce->name, namelen);
-		hashmap_entry_init(dir, hash);
+		hashmap_entry_init(dir, memihash(ce->name, namelen));
 		dir->namelen = namelen;
 		hashmap_add(&istate->dir_hash, dir);
 
