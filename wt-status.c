@@ -17,7 +17,6 @@
 #include "utf8.h"
 #include "worktree.h"
 #include "lockfile.h"
-#include "gvfs.h"
 
 static const char cut_line[] =
 "------------------------ >8 ------------------------\n";
