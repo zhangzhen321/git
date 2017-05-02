@@ -940,7 +940,8 @@ int match_pathname(const char *pathname, int pathlen,
 				 WM_PATHNAME) == 0;
 }
 
-static struct exclude *exclude_hash_matching_from_list(struct strbuf *sb, struct exclude_list *el)
+static struct exclude *find_exclude_matching_hash(struct strbuf *sb,
+						  struct exclude_list *el)
 {
 	struct exclude search;
 
@@ -977,7 +978,7 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 		strbuf_reset(&sb);
 		strbuf_addch(&sb, '/');
 		strbuf_add(&sb, pathname, pathlen);
-		match = exclude_hash_matching_from_list(&sb, el);
+		match = find_exclude_matching_hash(&sb, el);
 		if (match)
 			return match;
 
@@ -988,14 +989,14 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 		if (slash)
 			strbuf_add(&sb, pathname, slash - pathname + 1);
 		strbuf_addch(&sb, '*');
-		match = exclude_hash_matching_from_list(&sb, el);
+		match = find_exclude_matching_hash(&sb, el);
 		if (match)
 			return match;
 
 		/* Check general wildcard "*" */
 		strbuf_reset(&sb);
 		strbuf_addch(&sb, '*');
-		match = exclude_hash_matching_from_list(&sb, el);
+		match = find_exclude_matching_hash(&sb, el);
 		if (match)
 			return match;
 	}
