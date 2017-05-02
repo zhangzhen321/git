@@ -940,6 +940,16 @@ int match_pathname(const char *pathname, int pathlen,
 				 WM_PATHNAME) == 0;
 }
 
+static struct exclude *exclude_hash_matching_from_list(struct strbuf *sb, struct exclude_list *el)
+{
+	struct exclude search;
+
+	hashmap_entry_init(&search, pathhash(sb->buf));
+	search.pattern = sb->buf;
+	search.patternlen = sb->len;
+	return hashmap_get(&el->pattern_hash, &search, NULL);
+}
+
 /*
  * Scan the given exclude list in reverse to see whether pathname
  * should be ignored.  The first match (i.e. the last on the list), if
@@ -953,86 +963,81 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 						       struct exclude_list *el)
 {
 	if (el->pattern_hash.size) {
+		/*
+		 * We cannot search for every possible rule that matches the
+		 * current path because there are countless odd permutations
+		 * with wildcards.  Instead we search for most common cases
+		 * and fall through to the old logic if we fail.
+		 */
 		static struct strbuf sb = STRBUF_INIT;
 		const char *slash;
-		struct exclude search, *match;
+		struct exclude *match;
 
-		/* Check straight mapping */
+		/* Check exact match with leading slash "/a/b/c" */
 		strbuf_reset(&sb);
 		strbuf_addch(&sb, '/');
 		strbuf_add(&sb, pathname, pathlen);
-		hashmap_entry_init(&search, pathhash(sb.buf));
-		search.pattern = sb.buf;
-		search.patternlen = sb.len;
-		match = hashmap_get(&el->pattern_hash, &search, NULL);
+		match = exclude_hash_matching_from_list(&sb, el);
 		if (match)
 			return match;
 
-		/* Check wildcard mapping */
+		/* Check wildcard match with leading slash "/a/b/*" */
 		slash = strrchr(pathname, '/');
 		strbuf_reset(&sb);
 		strbuf_addch(&sb, '/');
 		if (slash)
 			strbuf_add(&sb, pathname, slash - pathname + 1);
 		strbuf_addch(&sb, '*');
-		hashmap_entry_init(&search, pathhash(sb.buf));
-		search.pattern = sb.buf;
-		search.patternlen = sb.len;
-		match = hashmap_get(&el->pattern_hash, &search, NULL);
+		match = exclude_hash_matching_from_list(&sb, el);
 		if (match)
 			return match;
 
-		/* Check all-inclusive wildcard */
+		/* Check general wildcard "*" */
 		strbuf_reset(&sb);
 		strbuf_addch(&sb, '*');
-		hashmap_entry_init(&search, pathhash(sb.buf));
-		search.pattern = sb.buf;
-		search.patternlen = sb.len;
-		match = hashmap_get(&el->pattern_hash, &search, NULL);
+		match = exclude_hash_matching_from_list(&sb, el);
 		if (match)
 			return match;
+	}
 
-		return NULL;
-	} else {
-		struct exclude *exc = NULL; /* undecided */
-		int i;
+	struct exclude *exc = NULL; /* undecided */
+	int i;
 
-		if (!el->nr)
-			return NULL;	/* undefined */
+	if (!el->nr)
+		return NULL;	/* undefined */
 
-		for (i = el->nr - 1; 0 <= i; i--) {
-			struct exclude *x = el->excludes[i];
-			const char *exclude = x->pattern;
-			int prefix = x->nowildcardlen;
+	for (i = el->nr - 1; 0 <= i; i--) {
+		struct exclude *x = el->excludes[i];
+		const char *exclude = x->pattern;
+		int prefix = x->nowildcardlen;
 
-			if (x->flags & EXC_FLAG_MUSTBEDIR) {
-				if (*dtype == DT_UNKNOWN)
-					*dtype = get_dtype(NULL, pathname, pathlen);
-				if (*dtype != DT_DIR)
-					continue;
-			}
-
-			if (x->flags & EXC_FLAG_NODIR) {
-				if (match_basename(basename,
-					pathlen - (basename - pathname),
-					exclude, prefix, x->patternlen,
-					x->flags)) {
-					exc = x;
-					break;
-				}
+		if (x->flags & EXC_FLAG_MUSTBEDIR) {
+			if (*dtype == DT_UNKNOWN)
+				*dtype = get_dtype(NULL, pathname, pathlen);
+			if (*dtype != DT_DIR)
 				continue;
-			}
+		}
 
-			assert(x->baselen == 0 || x->base[x->baselen - 1] == '/');
-			if (match_pathname(pathname, pathlen,
-				x->base, x->baselen ? x->baselen - 1 : 0,
-				exclude, prefix, x->patternlen, x->flags)) {
+		if (x->flags & EXC_FLAG_NODIR) {
+			if (match_basename(basename,
+				pathlen - (basename - pathname),
+				exclude, prefix, x->patternlen,
+				x->flags)) {
 				exc = x;
 				break;
 			}
+			continue;
 		}
-		return exc;
+
+		assert(x->baselen == 0 || x->base[x->baselen - 1] == '/');
+		if (match_pathname(pathname, pathlen,
+			x->base, x->baselen ? x->baselen - 1 : 0,
+			exclude, prefix, x->patternlen, x->flags)) {
+			exc = x;
+			break;
+		}
 	}
+	return exc;
 }
 
 /*
