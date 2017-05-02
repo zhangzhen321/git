@@ -15,6 +15,7 @@
 #include "utf8.h"
 #include "varint.h"
 #include "ewah/ewok.h"
+#include "gvfs.h"
 
 /*
  * Tells read_directory_recursive how a file or directory should be treated.
@@ -47,6 +48,18 @@ static enum path_treatment read_directory_recursive(struct dir_struct *dir,
 	const char *path, int len, struct untracked_cache_dir *untracked,
 	int check_only, const struct pathspec *pathspec);
 static int get_dtype(struct dirent *de, const char *path, int len);
+
+static unsigned int(*pathhash)(const char *path);
+static int(*pathcmp)(const char *a, const char *b, size_t len);
+
+static int path_hashmap_cmp(const void *a, const void *b, const void *key)
+{
+	const struct exclude *e1 = a;
+	const struct exclude *e2 = b;
+
+	return pathcmp(e1->pattern, e2->pattern, e1->patternlen);
+}
+
 
 int fspathcmp(const char *a, const char *b)
 {
@@ -808,9 +821,11 @@ struct exclude_list *add_exclude_list(struct dir_struct *dir,
  * Used to set up core.excludesfile and .git/info/exclude lists.
  */
 static void add_excludes_from_file_1(struct dir_struct *dir, const char *fname,
+				     int setup_hashmap,
 				     struct sha1_stat *sha1_stat)
 {
 	struct exclude_list *el;
+	int i;
 	/*
 	 * catch setup_standard_excludes() that's called before
 	 * dir->untracked is assigned. That function behaves
@@ -821,12 +836,25 @@ static void add_excludes_from_file_1(struct dir_struct *dir, const char *fname,
 	el = add_exclude_list(dir, EXC_FILE, fname);
 	if (add_excludes(fname, "", 0, el, 0, sha1_stat) < 0)
 		die("cannot use %s as an exclude file", fname);
+
+	if (setup_hashmap && el->nr) {
+		pathhash = ignore_case ? strihash : strhash;
+		pathcmp = ignore_case ? strnicmp : strncmp;
+
+		hashmap_init(&el->pattern_hash, path_hashmap_cmp, el->nr);
+
+		for (i = el->nr - 1; 0 <= i; i--) {
+			struct exclude *x = el->excludes[i];
+			hashmap_entry_init(&x->ent, pathhash(x->pattern));
+			hashmap_add(&el->pattern_hash, &x->ent);
+		}
+	}
 }
 
 void add_excludes_from_file(struct dir_struct *dir, const char *fname)
 {
 	dir->unmanaged_exclude_files++; /* see validate_untracked_cache() */
-	add_excludes_from_file_1(dir, fname, NULL);
+	add_excludes_from_file_1(dir, fname, 0, NULL);
 }
 
 int match_basename(const char *basename, int basenamelen,
@@ -924,44 +952,87 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 						       int *dtype,
 						       struct exclude_list *el)
 {
-	struct exclude *exc = NULL; /* undecided */
-	int i;
+	if (el->pattern_hash.size) {
+		static struct strbuf sb = STRBUF_INIT;
+		const char *slash;
+		struct exclude search, *match;
 
-	if (!el->nr)
-		return NULL;	/* undefined */
+		/* Check straight mapping */
+		strbuf_reset(&sb);
+		strbuf_addch(&sb, '/');
+		strbuf_add(&sb, pathname, pathlen);
+		hashmap_entry_init(&search, pathhash(sb.buf));
+		search.pattern = sb.buf;
+		search.patternlen = sb.len;
+		match = hashmap_get(&el->pattern_hash, &search, NULL);
+		if (match)
+			return match;
 
-	for (i = el->nr - 1; 0 <= i; i--) {
-		struct exclude *x = el->excludes[i];
-		const char *exclude = x->pattern;
-		int prefix = x->nowildcardlen;
+		/* Check wildcard mapping */
+		slash = strrchr(pathname, '/');
+		strbuf_reset(&sb);
+		strbuf_addch(&sb, '/');
+		if (slash)
+			strbuf_add(&sb, pathname, slash - pathname + 1);
+		strbuf_addch(&sb, '*');
+		hashmap_entry_init(&search, pathhash(sb.buf));
+		search.pattern = sb.buf;
+		search.patternlen = sb.len;
+		match = hashmap_get(&el->pattern_hash, &search, NULL);
+		if (match)
+			return match;
 
-		if (x->flags & EXC_FLAG_MUSTBEDIR) {
-			if (*dtype == DT_UNKNOWN)
-				*dtype = get_dtype(NULL, pathname, pathlen);
-			if (*dtype != DT_DIR)
+		/* Check all-inclusive wildcard */
+		strbuf_reset(&sb);
+		strbuf_addch(&sb, '*');
+		hashmap_entry_init(&search, pathhash(sb.buf));
+		search.pattern = sb.buf;
+		search.patternlen = sb.len;
+		match = hashmap_get(&el->pattern_hash, &search, NULL);
+		if (match)
+			return match;
+
+		return NULL;
+	} else {
+		struct exclude *exc = NULL; /* undecided */
+		int i;
+
+		if (!el->nr)
+			return NULL;	/* undefined */
+
+		for (i = el->nr - 1; 0 <= i; i--) {
+			struct exclude *x = el->excludes[i];
+			const char *exclude = x->pattern;
+			int prefix = x->nowildcardlen;
+
+			if (x->flags & EXC_FLAG_MUSTBEDIR) {
+				if (*dtype == DT_UNKNOWN)
+					*dtype = get_dtype(NULL, pathname, pathlen);
+				if (*dtype != DT_DIR)
+					continue;
+			}
+
+			if (x->flags & EXC_FLAG_NODIR) {
+				if (match_basename(basename,
+					pathlen - (basename - pathname),
+					exclude, prefix, x->patternlen,
+					x->flags)) {
+					exc = x;
+					break;
+				}
 				continue;
-		}
+			}
 
-		if (x->flags & EXC_FLAG_NODIR) {
-			if (match_basename(basename,
-					   pathlen - (basename - pathname),
-					   exclude, prefix, x->patternlen,
-					   x->flags)) {
+			assert(x->baselen == 0 || x->base[x->baselen - 1] == '/');
+			if (match_pathname(pathname, pathlen,
+				x->base, x->baselen ? x->baselen - 1 : 0,
+				exclude, prefix, x->patternlen, x->flags)) {
 				exc = x;
 				break;
 			}
-			continue;
 		}
-
-		assert(x->baselen == 0 || x->base[x->baselen - 1] == '/');
-		if (match_pathname(pathname, pathlen,
-				   x->base, x->baselen ? x->baselen - 1 : 0,
-				   exclude, prefix, x->patternlen, x->flags)) {
-			exc = x;
-			break;
-		}
+		return exc;
 	}
-	return exc;
 }
 
 /*
@@ -2241,27 +2312,29 @@ static GIT_PATH_FUNC(git_path_info_exclude, "info/exclude")
 
 void setup_standard_excludes(struct dir_struct *dir)
 {
+	int always_exclude_hashmap = gvfs_config_is_set(GVFS_ALWAYS_EXCLUDE_HASHMAP);
+
 	dir->exclude_per_dir = ".gitignore";
 
 	/* always_exclude */
 	if (startup_info->have_repository) {
 		const char *path = git_path_info_always_exclude();
 		if (!access_or_warn(path, R_OK, 0))
-			add_excludes_from_file_1(dir, path, NULL);
+			add_excludes_from_file_1(dir, path, always_exclude_hashmap, NULL );
 	}
 
 	/* core.excludesfile defaulting to $XDG_HOME/git/ignore */
 	if (!excludes_file)
 		excludes_file = xdg_config_home("ignore");
 	if (excludes_file && !access_or_warn(excludes_file, R_OK, 0))
-		add_excludes_from_file_1(dir, excludes_file,
+		add_excludes_from_file_1(dir, excludes_file, 0,
 					 dir->untracked ? &dir->ss_excludes_file : NULL);
 
 	/* per repository user preference */
 	if (startup_info->have_repository) {
 		const char *path = git_path_info_exclude();
 		if (!access_or_warn(path, R_OK, 0))
-			add_excludes_from_file_1(dir, path,
+			add_excludes_from_file_1(dir, path, 0,
 						 dir->untracked ? &dir->ss_info_exclude : NULL);
 	}
 }
