@@ -963,6 +963,9 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 						       int *dtype,
 						       struct exclude_list *el)
 {
+	struct exclude *exc = NULL; /* undecided */
+	int i;
+
 	if (el->pattern_hash.size) {
 		/*
 		 * We cannot search for every possible rule that matches the
@@ -982,7 +985,7 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 		if (match)
 			return match;
 
-		/* Check wildcard match with leading slash "/a/b/*" */
+		/* Check wildcard match with leading slash "/a/b/ *" */
 		slash = strrchr(pathname, '/');
 		strbuf_reset(&sb);
 		strbuf_addch(&sb, '/');
@@ -1000,9 +1003,6 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 		if (match)
 			return match;
 	}
-
-	struct exclude *exc = NULL; /* undecided */
-	int i;
 
 	if (!el->nr)
 		return NULL;	/* undefined */
