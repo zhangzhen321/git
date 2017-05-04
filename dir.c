@@ -54,12 +54,16 @@ static int path_hashmap_cmp(const void *a, const void *b, const void *key)
 	const struct exclude *e1 = a;
 	const struct exclude *e2 = b;
 
-	if (ignore_case)
-		return strnicmp(e1->pattern, e2->pattern, e1->patternlen);
-	else
-		return strncmp(e1->pattern, e2->pattern, e1->patternlen);
+	return strncmp(e1->pattern, e2->pattern, e1->patternlen);
 }
 
+static int path_hashmap_icmp(const void *a, const void *b, const void *key)
+{
+	const struct exclude *e1 = a;
+	const struct exclude *e2 = b;
+
+	return strnicmp(e1->pattern, e2->pattern, e1->patternlen);
+}
 
 int fspathcmp(const char *a, const char *b)
 {
@@ -838,14 +842,16 @@ static void add_excludes_from_file_1(struct dir_struct *dir, const char *fname,
 		die("cannot use %s as an exclude file", fname);
 
 	if (setup_hashmap && el->nr) {
-		hashmap_init(&el->pattern_hash, path_hashmap_cmp, el->nr);
+		hashmap_init(&el->pattern_hash,
+			     ignore_case ? path_hashmap_icmp : path_hashmap_cmp,
+			     el->nr);
 
 		for (i = el->nr - 1; 0 <= i; i--) {
 			struct exclude *x = el->excludes[i];
-			if (ignore_case)
-				hashmap_entry_init(&x->ent, strihash(x->pattern));
-			else
-				hashmap_entry_init(&x->ent, strhash(x->pattern));
+			hashmap_entry_init(&x->ent,
+					   ignore_case ?
+					   strihash(x->pattern) :
+					   strhash(x->pattern));
 			hashmap_add(&el->pattern_hash, &x->ent);
 		}
 	}
