@@ -49,15 +49,15 @@ static enum path_treatment read_directory_recursive(struct dir_struct *dir,
 	int check_only, const struct pathspec *pathspec);
 static int get_dtype(struct dirent *de, const char *path, int len);
 
-static unsigned int(*pathhash)(const char *path);
-static int(*pathcmp)(const char *a, const char *b, size_t len);
-
 static int path_hashmap_cmp(const void *a, const void *b, const void *key)
 {
 	const struct exclude *e1 = a;
 	const struct exclude *e2 = b;
 
-	return pathcmp(e1->pattern, e2->pattern, e1->patternlen);
+	if (ignore_case)
+		return strnicmp(e1->pattern, e2->pattern, e1->patternlen);
+	else
+		return strncmp(e1->pattern, e2->pattern, e1->patternlen);
 }
 
 
@@ -838,14 +838,14 @@ static void add_excludes_from_file_1(struct dir_struct *dir, const char *fname,
 		die("cannot use %s as an exclude file", fname);
 
 	if (setup_hashmap && el->nr) {
-		pathhash = ignore_case ? strihash : strhash;
-		pathcmp = ignore_case ? strnicmp : strncmp;
-
 		hashmap_init(&el->pattern_hash, path_hashmap_cmp, el->nr);
 
 		for (i = el->nr - 1; 0 <= i; i--) {
 			struct exclude *x = el->excludes[i];
-			hashmap_entry_init(&x->ent, pathhash(x->pattern));
+			if (ignore_case)
+				hashmap_entry_init(&x->ent, strihash(x->pattern));
+			else
+				hashmap_entry_init(&x->ent, strhash(x->pattern));
 			hashmap_add(&el->pattern_hash, &x->ent);
 		}
 	}
@@ -940,14 +940,16 @@ int match_pathname(const char *pathname, int pathlen,
 				 WM_PATHNAME) == 0;
 }
 
-static struct exclude *find_exclude_matching_hash(struct strbuf *sb,
+static struct exclude *find_exclude_matching_hash(const char *pattern,
+						  int pattern_len,
 						  struct exclude_list *el)
 {
 	struct exclude search;
 
-	hashmap_entry_init(&search, pathhash(sb->buf));
-	search.pattern = sb->buf;
-	search.patternlen = sb->len;
+	hashmap_entry_init(&search,
+			   ignore_case ? strihash(pattern) : strhash(pattern));
+	search.pattern = pattern;
+	search.patternlen = pattern_len;
 	return hashmap_get(&el->pattern_hash, &search, NULL);
 }
 
@@ -981,7 +983,7 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 		strbuf_reset(&sb);
 		strbuf_addch(&sb, '/');
 		strbuf_add(&sb, pathname, pathlen);
-		match = find_exclude_matching_hash(&sb, el);
+		match = find_exclude_matching_hash(sb.buf, sb.len, el);
 		if (match)
 			return match;
 
@@ -992,14 +994,12 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 		if (slash)
 			strbuf_add(&sb, pathname, slash - pathname + 1);
 		strbuf_addch(&sb, '*');
-		match = find_exclude_matching_hash(&sb, el);
+		match = find_exclude_matching_hash(sb.buf, sb.len, el);
 		if (match)
 			return match;
 
 		/* Check general wildcard "*" */
-		strbuf_reset(&sb);
-		strbuf_addch(&sb, '*');
-		match = find_exclude_matching_hash(&sb, el);
+		match = find_exclude_matching_hash("*", 1, el);
 		if (match)
 			return match;
 	}
