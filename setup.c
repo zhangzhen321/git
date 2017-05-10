@@ -36,7 +36,7 @@ static int abspath_part_inside_repo(char *path)
 	off = offset_1st_component(path);
 
 	/* check if work tree is already the prefix */
-	if (wtlen <= len && !strncmp(path, work_tree, wtlen)) {
+	if (wtlen <= len && !fspathncmp(path, work_tree, wtlen)) {
 		if (path[wtlen] == '/') {
 			memmove(path, path + wtlen + 1, len - wtlen);
 			return 0;
@@ -56,7 +56,7 @@ static int abspath_part_inside_repo(char *path)
 		path++;
 		if (*path == '/') {
 			*path = '\0';
-			if (strcmp(real_path(path0), work_tree) == 0) {
+			if (fspathcmp(real_path(path0), work_tree) == 0) {
 				memmove(path0, path + 1, len - (path - path0));
 				return 0;
 			}
@@ -65,7 +65,7 @@ static int abspath_part_inside_repo(char *path)
 	}
 
 	/* check whole path */
-	if (strcmp(real_path(path0), work_tree) == 0) {
+	if (fspathcmp(real_path(path0), work_tree) == 0) {
 		*path0 = '\0';
 		return 0;
 	}
@@ -135,6 +135,7 @@ int path_inside_repo(const char *prefix, const char *path)
 int check_filename(const char *prefix, const char *arg)
 {
 	const char *name;
+	char *to_free = NULL;
 	struct stat st;
 
 	if (starts_with(arg, ":/")) {
@@ -142,13 +143,17 @@ int check_filename(const char *prefix, const char *arg)
 			return 1;
 		name = arg + 2;
 	} else if (prefix)
-		name = prefix_filename(prefix, strlen(prefix), arg);
+		name = to_free = prefix_filename(prefix, arg);
 	else
 		name = arg;
-	if (!lstat(name, &st))
+	if (!lstat(name, &st)) {
+		free(to_free);
 		return 1; /* file exists */
-	if (errno == ENOENT || errno == ENOTDIR)
+	}
+	if (errno == ENOENT || errno == ENOTDIR) {
+		free(to_free);
 		return 0; /* file does not exist */
+	}
 	die_errno("failed to stat '%s'", arg);
 }
 
@@ -254,7 +259,7 @@ int get_common_dir_noenv(struct strbuf *sb, const char *gitdir)
 		if (!is_absolute_path(data.buf))
 			strbuf_addf(&path, "%s/", gitdir);
 		strbuf_addbuf(&path, &data);
-		strbuf_addstr(sb, real_path(path.buf));
+		strbuf_add_real_path(sb, path.buf);
 		ret = 1;
 	} else {
 		strbuf_addstr(sb, gitdir);
@@ -698,11 +703,16 @@ static const char *setup_discovered_git_dir(const char *gitdir,
 
 	/* --work-tree is set without --git-dir; use discovered one */
 	if (getenv(GIT_WORK_TREE_ENVIRONMENT) || git_work_tree_cfg) {
+		char *to_free = NULL;
+		const char *ret;
+
 		if (offset != cwd->len && !is_absolute_path(gitdir))
-			gitdir = real_pathdup(gitdir, 1);
+			gitdir = to_free = real_pathdup(gitdir, 1);
 		if (chdir(cwd->buf))
 			die_errno("Could not come back to cwd");
-		return setup_explicit_git_dir(gitdir, cwd, nongit_ok);
+		ret = setup_explicit_git_dir(gitdir, cwd, nongit_ok);
+		free(to_free);
+		return ret;
 	}
 
 	/* #16.2, #17.2, #20.2, #21.2, #24, #25, #28, #29 (see t1510) */
@@ -743,7 +753,7 @@ static const char *setup_bare_git_dir(struct strbuf *cwd, int offset,
 
 	/* --work-tree is set without --git-dir; use discovered one */
 	if (getenv(GIT_WORK_TREE_ENVIRONMENT) || git_work_tree_cfg) {
-		const char *gitdir;
+		static const char *gitdir;
 
 		gitdir = offset == cwd->len ? "." : xmemdupz(cwd->buf, offset);
 		if (chdir(cwd->buf))
@@ -982,7 +992,7 @@ const char *setup_git_directory_gently(int *nongit_ok)
 {
 	static struct strbuf cwd = STRBUF_INIT;
 	struct strbuf dir = STRBUF_INIT, gitdir = STRBUF_INIT;
-	const char *prefix;
+	const char *prefix, *env_prefix;
 
 	/*
 	 * We may have read an incomplete configuration before
@@ -1039,6 +1049,10 @@ const char *setup_git_directory_gently(int *nongit_ok)
 	default:
 		die("BUG: unhandled setup_git_directory_1() result");
 	}
+
+	env_prefix = getenv(GIT_TOPLEVEL_PREFIX_ENVIRONMENT);
+	if (env_prefix)
+		prefix = env_prefix;
 
 	if (prefix)
 		setenv(GIT_PREFIX_ENVIRONMENT, prefix, 1);
