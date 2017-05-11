@@ -179,8 +179,10 @@ EOF
 '
 
 test_expect_success 'crlf conversions blocked when under GVFS' '
-
-	rm -f .gitattributes tmp LFonly CRLFonly LFwithNUL &&
+	git rm -f .gitattributes &&
+	test_tick &&
+	git commit -m "remove .gitattributes" &&
+	rm -f tmp LFonly CRLFonly LFwithNUL &&
 
 	git config core.gvfs 64 &&
 	git config core.autocrlf true &&
