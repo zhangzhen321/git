@@ -1313,20 +1313,26 @@ int is_always_excluded(struct dir_struct *dir, const char *pathname, int *dtype_
 {
 	struct exclude *exclude = NULL;
 	struct exclude_list_group *group;
-	const char *path = git_path_info_always_exclude();
-	int pathlen = strlen(pathname);
-	const char *basename = strrchr(pathname, '/');
-	basename = (basename) ? basename + 1 : pathname;
+	const char *path;
+
+	if (!startup_info->have_repository)
+		return 0;
+
+	path = git_path_info_always_exclude();
 
 	group = &dir->exclude_list_group[EXC_FILE];
 	if (group->nr && group->el && !strcmp(group->el->src, path)) {
+		size_t pathlen = strlen(pathname);
+		const char *basename = strrchr(pathname, '/');
+		basename = basename ? basename + 1 : pathname;
+
 		exclude = last_exclude_matching_from_list(
 			pathname, pathlen, basename, dtype_p,
 			group->el);
+		if (exclude)
+			return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
 	}
 
-	if (exclude)
-		return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
 	return 0;
 }
 
