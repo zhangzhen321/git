@@ -9,6 +9,7 @@
  */
 #include "cache.h"
 #include "dir.h"
+#include "attr.h"
 #include "refs.h"
 #include "wildmatch.h"
 #include "pathspec.h"
@@ -151,7 +152,8 @@ static size_t common_prefix_len(const struct pathspec *pathspec)
 		       PATHSPEC_LITERAL |
 		       PATHSPEC_GLOB |
 		       PATHSPEC_ICASE |
-		       PATHSPEC_EXCLUDE);
+		       PATHSPEC_EXCLUDE |
+		       PATHSPEC_ATTR);
 
 	for (n = 0; n < pathspec->nr; n++) {
 		size_t i = 0, len = 0, item_len;
@@ -226,6 +228,36 @@ int within_depth(const char *name, int namelen,
 #define DO_MATCH_DIRECTORY (1<<1)
 #define DO_MATCH_SUBMODULE (1<<2)
 
+static int match_attrs(const char *name, int namelen,
+		       const struct pathspec_item *item)
+{
+	int i;
+
+	git_check_attr(name, item->attr_check);
+	for (i = 0; i < item->attr_match_nr; i++) {
+		const char *value;
+		int matched;
+		enum attr_match_mode match_mode;
+
+		value = item->attr_check->items[i].value;
+		match_mode = item->attr_match[i].match_mode;
+
+		if (ATTR_TRUE(value))
+			matched = (match_mode == MATCH_SET);
+		else if (ATTR_FALSE(value))
+			matched = (match_mode == MATCH_UNSET);
+		else if (ATTR_UNSET(value))
+			matched = (match_mode == MATCH_UNSPECIFIED);
+		else
+			matched = (match_mode == MATCH_VALUE &&
+				   !strcmp(item->attr_match[i].value, value));
+		if (!matched)
+			return 0;
+	}
+
+	return 1;
+}
+
 /*
  * Does 'match' match the given name?
  * A match is found if
@@ -276,6 +308,9 @@ static int match_pathspec_item(const struct pathspec_item *item, int prefix,
 	 */
 	if (item->prefix && (item->magic & PATHSPEC_ICASE) &&
 	    strncmp(item->match, name - prefix, item->prefix))
+		return 0;
+
+	if (item->attr_match_nr && !match_attrs(name, namelen, item))
 		return 0;
 
 	/* If the match was just the prefix, we matched */
@@ -356,7 +391,8 @@ static int do_match_pathspec(const struct pathspec *ps,
 		       PATHSPEC_LITERAL |
 		       PATHSPEC_GLOB |
 		       PATHSPEC_ICASE |
-		       PATHSPEC_EXCLUDE);
+		       PATHSPEC_EXCLUDE |
+		       PATHSPEC_ATTR);
 
 	if (!ps->nr) {
 		if (!ps->recursive ||
@@ -1277,20 +1313,26 @@ int is_always_excluded(struct dir_struct *dir, const char *pathname, int *dtype_
 {
 	struct exclude *exclude = NULL;
 	struct exclude_list_group *group;
-	const char *path = git_path_info_always_exclude();
-	int pathlen = strlen(pathname);
-	const char *basename = strrchr(pathname, '/');
-	basename = (basename) ? basename + 1 : pathname;
+	const char *path;
+
+	if (!startup_info->have_repository)
+		return 0;
+
+	path = git_path_info_always_exclude();
 
 	group = &dir->exclude_list_group[EXC_FILE];
 	if (group->nr && group->el && !strcmp(group->el->src, path)) {
+		size_t pathlen = strlen(pathname);
+		const char *basename = strrchr(pathname, '/');
+		basename = basename ? basename + 1 : pathname;
+
 		exclude = last_exclude_matching_from_list(
 			pathname, pathlen, basename, dtype_p,
 			group->el);
+		if (exclude)
+			return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
 	}
 
-	if (exclude)
-		return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
 	return 0;
 }
 
@@ -1467,7 +1509,8 @@ static int simplify_away(const char *path, int pathlen,
 		       PATHSPEC_LITERAL |
 		       PATHSPEC_GLOB |
 		       PATHSPEC_ICASE |
-		       PATHSPEC_EXCLUDE);
+		       PATHSPEC_EXCLUDE |
+		       PATHSPEC_ATTR);
 
 	for (i = 0; i < pathspec->nr; i++) {
 		const struct pathspec_item *item = &pathspec->items[i];
@@ -2848,23 +2891,33 @@ void untracked_cache_add_to_index(struct index_state *istate,
 /* Update gitfile and core.worktree setting to connect work tree and git dir */
 void connect_work_tree_and_git_dir(const char *work_tree_, const char *git_dir_)
 {
-	struct strbuf file_name = STRBUF_INIT;
+	struct strbuf gitfile_sb = STRBUF_INIT;
+	struct strbuf cfg_sb = STRBUF_INIT;
 	struct strbuf rel_path = STRBUF_INIT;
-	char *git_dir = real_pathdup(git_dir_, 1);
-	char *work_tree = real_pathdup(work_tree_, 1);
+	char *git_dir, *work_tree;
 
-	/* Update gitfile */
-	strbuf_addf(&file_name, "%s/.git", work_tree);
-	write_file(file_name.buf, "gitdir: %s",
+	/* Prepare .git file */
+	strbuf_addf(&gitfile_sb, "%s/.git", work_tree_);
+	if (safe_create_leading_directories_const(gitfile_sb.buf))
+		die(_("could not create directories for %s"), gitfile_sb.buf);
+
+	/* Prepare config file */
+	strbuf_addf(&cfg_sb, "%s/config", git_dir_);
+	if (safe_create_leading_directories_const(cfg_sb.buf))
+		die(_("could not create directories for %s"), cfg_sb.buf);
+
+	git_dir = real_pathdup(git_dir_, 1);
+	work_tree = real_pathdup(work_tree_, 1);
+
+	/* Write .git file */
+	write_file(gitfile_sb.buf, "gitdir: %s",
 		   relative_path(git_dir, work_tree, &rel_path));
-
 	/* Update core.worktree setting */
-	strbuf_reset(&file_name);
-	strbuf_addf(&file_name, "%s/config", git_dir);
-	git_config_set_in_file(file_name.buf, "core.worktree",
+	git_config_set_in_file(cfg_sb.buf, "core.worktree",
 			       relative_path(work_tree, git_dir, &rel_path));
 
-	strbuf_release(&file_name);
+	strbuf_release(&gitfile_sb);
+	strbuf_release(&cfg_sb);
 	strbuf_release(&rel_path);
 	free(work_tree);
 	free(git_dir);
