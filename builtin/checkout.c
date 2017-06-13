@@ -932,7 +932,8 @@ static int switch_branches(const struct checkout_opts *opts,
 	int flag, writeout_error = 0;
 	memset(&old, 0, sizeof(old));
 	old.path = path_to_free = resolve_refdup("HEAD", 0, rev.hash, &flag);
-	old.commit = lookup_commit_reference_gently(rev.hash, 1);
+	if (old.path)
+		old.commit = lookup_commit_reference_gently(rev.hash, 1);
 	if (!(flag & REF_ISSYMREF))
 		old.path = NULL;
 
@@ -1385,9 +1386,8 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		 * new_branch && argc > 1 will be caught later.
 		 */
 		if (opts.new_branch && argc == 1)
-			die(_("Cannot update paths and switch to branch '%s' at the same time.\n"
-			      "Did you intend to checkout '%s' which can not be resolved as commit?"),
-			    opts.new_branch, argv[0]);
+			die(_("'%s' is not a commit and a branch '%s' cannot be created from it"),
+				argv[0], opts.new_branch);
 
 		if (opts.force_detach)
 			die(_("git checkout: --detach does not take a path argument '%s'"),
