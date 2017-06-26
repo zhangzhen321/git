@@ -6,6 +6,7 @@
 #include "../strbuf.h"
 #include "../run-command.h"
 #include "../cache.h"
+#include "win32/exit-process.h"
 
 #define HCAST(type, handle) ((type)(intptr_t)handle)
 
@@ -269,7 +270,8 @@ int mingw_core_config(const char *var, const char *value)
 	return 0;
 }
 
-DECLARE_PROC_ADDR(kernel32.dll, BOOL, CreateSymbolicLinkW, LPCWSTR, LPCWSTR, DWORD);
+static DWORD symlink_file_flags = 0, symlink_directory_flags = 1;
+DECLARE_PROC_ADDR(kernel32.dll, BOOLEAN, CreateSymbolicLinkW, LPCWSTR, LPCWSTR, DWORD);
 
 enum phantom_symlink_result {
 	PHANTOM_SYMLINK_RETRY,
@@ -313,7 +315,8 @@ static enum phantom_symlink_result process_phantom_symlink(
 		return PHANTOM_SYMLINK_DONE;
 
 	/* otherwise recreate the symlink with directory flag */
-	if (DeleteFileW(wlink) && CreateSymbolicLinkW(wlink, wtarget, 1))
+	if (DeleteFileW(wlink) &&
+	    CreateSymbolicLinkW(wlink, wtarget, symlink_directory_flags))
 		return PHANTOM_SYMLINK_DIRECTORY;
 
 	errno = err_win_to_posix(GetLastError());
@@ -1498,10 +1501,44 @@ struct pinfo_t {
 static struct pinfo_t *pinfo = NULL;
 CRITICAL_SECTION pinfo_cs;
 
+#ifndef SIGRTMAX
+#define SIGRTMAX 63
+#endif
+
+static void kill_child_processes_on_signal(void)
+{
+	DWORD status;
+
+	/*
+	 * Only continue if the process was terminated by a signal, as
+	 * indicated by the exit status (128 + sig_no).
+	 *
+	 * As we are running in an atexit() handler, the exit code has been
+	 * set at this stage by the ExitProcess() function already.
+	 */
+	if (!GetExitCodeProcess(GetCurrentProcess(), &status) ||
+	    status <= 128 || status > 128 + SIGRTMAX)
+		return;
+
+	EnterCriticalSection(&pinfo_cs);
+
+	while (pinfo) {
+		struct pinfo_t *info = pinfo;
+		pinfo = pinfo->next;
+		if (exit_process(info->proc, status))
+			/* the handle is still valid in case of error */
+			CloseHandle(info->proc);
+		free(info);
+	}
+
+	LeaveCriticalSection(&pinfo_cs);
+}
+
 static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaenv,
 			      const char *dir,
 			      int prepend_cmd, int fhin, int fhout, int fherr)
 {
+	static int atexit_handler_initialized;
 	STARTUPINFOW si;
 	PROCESS_INFORMATION pi;
 	struct strbuf args;
@@ -1509,6 +1546,18 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 	unsigned flags = CREATE_UNICODE_ENVIRONMENT;
 	BOOL ret;
 	HANDLE cons;
+	const char *strace_env;
+
+	if (!atexit_handler_initialized) {
+		atexit_handler_initialized = 1;
+		/*
+		 * On Windows, there is no POSIX signaling. Instead, we inject
+		 * a thread calling ExitProcess(128 + sig_no); and that calls
+		 * the *atexit* handlers. Catch this condition and kill child
+		 * processes with the same signal.
+		 */
+		atexit(kill_child_processes_on_signal);
+	}
 
 	do_unset_environment_variables();
 
@@ -1568,7 +1617,8 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 			free(quoted);
 	}
 
-	if (getenv("GIT_STRACE_COMMANDS")) {
+	strace_env = getenv("GIT_STRACE_COMMANDS");
+	if (strace_env) {
 		char **path = get_path_split();
 		char *p = path_lookup("strace.exe", path, 1);
 		if (!p) {
@@ -1580,8 +1630,20 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 			free(p);
 			return -1;
 		}
-		strbuf_insert(&args, 0, "strace ", 7);
 		free(p);
+		if (!strcmp("1", strace_env) ||
+		    !strcasecmp("yes", strace_env) ||
+		    !strcasecmp("true", strace_env))
+			strbuf_insert(&args, 0, "strace ", 7);
+		else {
+			const char *quoted = quote_arg(strace_env);
+			struct strbuf buf = STRBUF_INIT;
+			strbuf_addf(&buf, "strace -o %s ", quoted);
+			if (quoted != strace_env)
+				free((char *)quoted);
+			strbuf_insert(&args, 0, buf.buf, buf.len);
+			strbuf_release(&buf);
+		}
 	}
 
 	ALLOC_ARRAY(wargs, st_add(st_mult(2, args.len), 1));
@@ -1738,16 +1800,28 @@ int mingw_execvp(const char *cmd, char *const *argv)
 int mingw_kill(pid_t pid, int sig)
 {
 	if (pid > 0 && sig == SIGTERM) {
-		HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+		HANDLE h = OpenProcess(PROCESS_CREATE_THREAD |
+				       PROCESS_QUERY_INFORMATION |
+				       PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
+				       PROCESS_VM_READ | PROCESS_TERMINATE,
+				       FALSE, pid);
+		int ret;
 
-		if (TerminateProcess(h, -1)) {
-			CloseHandle(h);
-			return 0;
+		if (h)
+			ret = exit_process(h, 128 + sig);
+		else {
+			h = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+			if (!h) {
+				errno = err_win_to_posix(GetLastError());
+				return -1;
+			}
+			ret = terminate_process_tree(h, 128 + sig);
 		}
-
-		errno = err_win_to_posix(GetLastError());
-		CloseHandle(h);
-		return -1;
+		if (ret) {
+			errno = err_win_to_posix(GetLastError());
+			CloseHandle(h);
+		}
+		return ret;
 	} else if (pid > 0 && sig == 0) {
 		HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
 		if (h) {
@@ -2584,7 +2658,7 @@ int symlink(const char *target, const char *link)
 			wtarget[len] = '\\';
 
 	/* create file symlink */
-	if (!CreateSymbolicLinkW(wlink, wtarget, 0)) {
+	if (!CreateSymbolicLinkW(wlink, wtarget, symlink_file_flags)) {
 		errno = err_win_to_posix(GetLastError());
 		return -1;
 	}
@@ -3106,6 +3180,24 @@ static void maybe_redirect_std_handles(void)
 				  GENERIC_WRITE, FILE_FLAG_NO_BUFFERING);
 }
 
+static void adjust_symlink_flags(void)
+{
+	/*
+	 * Starting with Windows 10 Build 14972, symbolic links can be created
+	 * using CreateSymbolicLink() without elevation by passing the flag
+	 * SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE (0x02) as last
+	 * parameter, provided the Developer Mode has been enabled. Some
+	 * earlier Windows versions complain about this flag with an
+	 * ERROR_INVALID_PARAMETER, hence we have to test the build number
+	 * specifically.
+	 */
+	if (GetVersion() >= 14972 << 16) {
+		symlink_file_flags |= 2;
+		symlink_directory_flags |= 2;
+	}
+
+}
+
 #if defined(_MSC_VER)
 
 #ifdef _DEBUG
@@ -3145,6 +3237,7 @@ int msc_startup(int argc, wchar_t **w_argv, wchar_t **w_env)
 #endif
 
 	maybe_redirect_std_handles();
+	adjust_symlink_flags();
 
 	/* determine size of argv conversion buffer */
 	maxlen = wcslen(_wpgmptr);
@@ -3211,6 +3304,7 @@ void mingw_startup(void)
 	_startupinfo si;
 
 	maybe_redirect_std_handles();
+	adjust_symlink_flags();
 
 	/* get wide char arguments and environment */
 	si.newmode = 0;
@@ -3304,13 +3398,8 @@ const char *program_data_config(void)
 
 	if (!initialized) {
 		const char *env = mingw_getenv("PROGRAMDATA");
-		const char *extra = "";
-		if (!env) {
-			env = mingw_getenv("ALLUSERSPROFILE");
-			extra = "/Application Data";
-		}
 		if (env)
-			strbuf_addf(&path, "%s%s/Git/config", env, extra);
+			strbuf_addf(&path, "%s/Git/config", env);
 		initialized = 1;
 	}
 	return *path.buf ? path.buf : NULL;

@@ -4,12 +4,6 @@ test_description='CRLF conversion all combinations'
 
 . ./test-lib.sh
 
-if ! test_have_prereq EXPENSIVE && ! test_have_prereq MINGW
-then
-	skip_all="Neither EXPENSIVE nor MINGW set"
-	test_done
-fi
-
 compare_files () {
 	tr '\015\000' QN <"$1" >"$1".expect &&
 	tr '\015\000' QN <"$2" | tr -d 'Z' >"$2".actual &&
@@ -75,7 +69,7 @@ check_warning () {
 	*) echo >&2 "Illegal 1": "$1" ; return false ;;
 	esac
 	grep "will be replaced by" "$2" | sed -e "s/\(.*\) in [^ ]*$/\1/" | uniq  >"$2".actual
-	test_cmp "$2".expect "$2".actual
+	test_i18ncmp "$2".expect "$2".actual
 }
 
 commit_check_warn () {
@@ -281,6 +275,18 @@ checkout_files () {
 		compare_ws_file $pfx $crlfnul   crlf_false_attr__LF_nul.txt
 	"
 }
+
+test_expect_success 'crlf conversions blocked when under GVFS' '
+	git checkout -b gvfs &&
+	test_commit initial &&
+	rm initial.t &&
+	test_config core.gvfs 64 &&
+	test_config core.autocrlf true &&
+	test_must_fail git read-tree --reset -u HEAD &&
+
+	git config core.autocrlf false &&
+	git read-tree --reset -u HEAD
+'
 
 # Test control characters
 # NUL SOH CR EOF==^Z
