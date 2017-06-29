@@ -2371,7 +2371,7 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 		return -1;
 	if (close_tempfile(tempfile))
 		return error(_("could not close '%s'"), tempfile->filename.buf);
-	if (lstat(tempfile->filename.buf, &st))
+	if (stat(tempfile->filename.buf, &st))
 		return -1;
 	istate->timestamp.sec = (unsigned int)st.st_mtime;
 	istate->timestamp.nsec = ST_MTIME_NSEC(st);
