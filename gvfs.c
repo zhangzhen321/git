@@ -1,6 +1,6 @@
 #include "cache.h"
 #include "gvfs.h"
-
+#include "config.h"
 
 static int gvfs_config_loaded;
 static int core_gvfs_is_bool;
