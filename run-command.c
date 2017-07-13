@@ -5,6 +5,7 @@
 #include "argv-array.h"
 #include "thread-utils.h"
 #include "strbuf.h"
+#include "config.h"
 
 void child_process_init(struct child_process *child)
 {
@@ -1180,21 +1181,24 @@ static const char *hook_path_early(const char *name, struct strbuf *result)
 		return NULL;
 
 	if (!initialized) {
-		struct strbuf gitdir = STRBUF_INIT;
+		struct strbuf gitdir = STRBUF_INIT, commondir = STRBUF_INIT;
 		const char *early_hooks_dir = NULL;
 
-		if (!discover_git_directory(&gitdir)) {
+		if (discover_git_directory(&commondir, &gitdir) < 0) {
 			initialized = -1;
 			return NULL;
 		}
 
 		read_early_config(early_hooks_path_config, &early_hooks_dir);
 		if (!early_hooks_dir)
-			strbuf_addf(&hooks_dir, "%s/hooks/", gitdir.buf);
+			strbuf_addf(&hooks_dir, "%s/hooks/", commondir.buf);
 		else {
 			strbuf_add_absolute_path(&hooks_dir, early_hooks_dir);
 			strbuf_addch(&hooks_dir, '/');
 		}
+
+		strbuf_release(&gitdir);
+		strbuf_release(&commondir);
 
 		initialized = 1;
 	}
