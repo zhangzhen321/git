@@ -477,6 +477,14 @@ test_expect_success 'add -p does not expand argument lists' '
 	! grep not-changed trace.out
 '
 
+test_expect_success 'hunk-editing handles custom comment char' '
+	git reset --hard &&
+	echo change >>file &&
+	test_config core.commentChar "\$" &&
+	echo e | GIT_EDITOR=true git add -p &&
+	git diff --exit-code
+'
+
 test_expect_success EXPENSIVE 'add -i with a lot of files' '
 	git reset --hard &&
 	x160=0123456789012345678901234567890123456789 &&
