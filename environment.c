@@ -8,6 +8,7 @@
  * are.
  */
 #include "cache.h"
+#include "config.h"
 #include "refs.h"
 #include "fmt-merge-msg.h"
 #include "commit.h"
@@ -102,7 +103,7 @@ static size_t namespace_len;
 
 static const char *super_prefix;
 
-static const char *git_dir, *git_common_dir, *saved_git_dir;
+static const char *git_dir, *git_common_dir;
 static char *git_object_dir, *git_index_file, *git_graft_file;
 int git_db_env, git_index_env, git_graft_env, git_common_dir_env;
 
@@ -194,16 +195,6 @@ static void setup_git_env(void)
 	shallow_file = getenv(GIT_SHALLOW_FILE_ENVIRONMENT);
 	if (shallow_file)
 		set_alternate_shallow_file(shallow_file, 0);
-}
-
-void save_git_dir_before_alias(void)
-{
-	saved_git_dir = git_dir;
-}
-
-void restore_git_dir_after_alias(void)
-{
-	git_dir = saved_git_dir;
 }
 
 int is_bare_repository(void)

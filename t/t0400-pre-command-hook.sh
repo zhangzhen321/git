@@ -18,7 +18,11 @@ test_expect_success 'with succeeding hook' '
 	EOF
 	echo "second" >> file &&
 	git add file &&
-	test "add file" = "$(cat .git/pre-command.out)"
+	test "add file" = "$(cat .git/pre-command.out)" &&
+	echo Hello | git hash-object --stdin &&
+	test "hash-object --stdin" = "$(cat .git/pre-command.out)" &&
+	test_expect_code 129 git rebase -h &&
+	test "git-rebase -h" = "$(cat .git/pre-command.out)"
 '
 
 test_expect_success 'with failing hook' '
