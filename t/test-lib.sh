@@ -15,6 +15,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see http://www.gnu.org/licenses/ .
 
+# On Unix/Linux, the path separator is the colon, on other systems it
+# may be different, though. On Windows, for example, it is a semicolon.
+# If the PATH variable contains semicolons, it is pretty safe to assume
+# that the path separator is a semicolon.
+case "$PATH" in
+*\;*) PATH_SEP=\; ;;
+*) PATH_SEP=: ;;
+esac
+
 # Test the binaries we have just built.  The tests are kept in
 # t/ subdirectory and are run in 'trash directory' subdirectory.
 if test -z "$TEST_DIRECTORY"
@@ -36,6 +45,14 @@ then
 fi
 GIT_BUILD_DIR="$TEST_DIRECTORY"/..
 
+# If we were built with ASAN, it may complain about leaks
+# of program-lifetime variables. Disable it by default to lower
+# the noise level. This needs to happen at the start of the script,
+# before we even do our "did we build git yet" check (since we don't
+# want that one to complain to stderr).
+: ${ASAN_OPTIONS=detect_leaks=0:abort_on_error=1}
+export ASAN_OPTIONS
+
 if test ! -f "$GIT_BUILD_DIR"/GIT-BUILD-OPTIONS
 then
 	echo >&2 'error: GIT-BUILD-OPTIONS missing (has Git been built?).'
@@ -46,11 +63,11 @@ fi
 export PERL_PATH SHELL_PATH
 
 test -z "$MSVC_DEPS" ||
-PATH="$GIT_BUILD_DIR/$MSVC_DEPS/bin:$PATH"
+PATH="$GIT_BUILD_DIR/$MSVC_DEPS/bin$PATH_SEP$PATH"
 
 ################################################################
 # It appears that people try to run tests without building...
-"$GIT_BUILD_DIR/git$X" >/dev/null
+test -n "$GIT_TEST_INSTALLED" || "$GIT_BUILD_DIR/git$X" >/dev/null ||
 if test $? != 1
 then
 	echo >&2 'error: you do not seem to have built git yet.'
@@ -95,24 +112,19 @@ EDITOR=:
 # /usr/xpg4/bin/sh and /bin/ksh to bail out.  So keep the unsets
 # deriving from the command substitution clustered with the other
 # ones.
-unset VISUAL EMAIL LANGUAGE COLUMNS $("$PERL_PATH" -e '
-	my @env = keys %ENV;
-	my $ok = join("|", qw(
-		TRACE
-		DEBUG
-		USE_LOOKUP
-		TEST
-		.*_TEST
-		PROVE
-		VALGRIND
-		UNZIP
-		PERF_
-		CURL_VERBOSE
-		TRACE_CURL
-	));
-	my @vars = grep(/^GIT_/ && !/^GIT_($ok)/o, @env);
-	print join("\n", @vars);
-')
+unset VISUAL EMAIL LANGUAGE COLUMNS $(env | sed -n \
+	-e '/^GIT_TRACE/d' \
+	-e '/^GIT_DEBUG/d' \
+	-e '/^GIT_USE_LOOKUP/d' \
+	-e '/^GIT_TEST/d' \
+	-e '/^GIT_.*_TEST/d' \
+	-e '/^GIT_PROVE/d' \
+	-e '/^GIT_VALGRIND/d' \
+	-e '/^GIT_UNZIP/d' \
+	-e '/^GIT_PERF_/d' \
+	-e '/^GIT_CURL_VERBOSE/d' \
+	-e '/^GIT_TRACE_CURL/d' \
+	-e 's/^\(GIT_[^=]*\)=.*/\1/p')
 unset XDG_CONFIG_HOME
 unset GITPERLLIB
 GIT_AUTHOR_EMAIL=author@example.com
@@ -156,9 +168,6 @@ else
 		unset MALLOC_CHECK_ MALLOC_PERTURB_
 	}
 fi
-
-: ${ASAN_OPTIONS=detect_leaks=0}
-export ASAN_OPTIONS
 
 # Protect ourselves from common misconfiguration to export
 # CDPATH into the environment
@@ -789,10 +798,15 @@ test_done () {
 			esac
 		fi
 
-		test -d "$remove_trash" &&
-		cd "$(dirname "$remove_trash")" &&
-		rm -rf "$(basename "$remove_trash")"
+		if test -z "$debug"
+		then
+			test -d "$TRASH_DIRECTORY" ||
+			error "Tests passed but trash directory already removed before test cleanup; aborting"
 
+			cd "$TRASH_DIRECTORY/.." &&
+			rm -fr "$TRASH_DIRECTORY" ||
+			error "Tests passed but test cleanup failed; aborting"
+		fi
 		test_at_end_hook_
 
 		exit 0 ;;
@@ -881,7 +895,7 @@ then
 		done
 	done
 	IFS=$OLDIFS
-	PATH=$GIT_VALGRIND/bin:$PATH
+	PATH=$GIT_VALGRIND/bin$PATH_SEP$PATH
 	GIT_EXEC_PATH=$GIT_VALGRIND/bin
 	export GIT_VALGRIND
 	GIT_VALGRIND_MODE="$valgrind"
@@ -893,7 +907,7 @@ elif test -n "$GIT_TEST_INSTALLED"
 then
 	GIT_EXEC_PATH=$($GIT_TEST_INSTALLED/git --exec-path)  ||
 	error "Cannot run git from $GIT_TEST_INSTALLED."
-	PATH=$GIT_TEST_INSTALLED:$GIT_BUILD_DIR:$PATH
+	PATH=$GIT_TEST_INSTALLED$PATH_SEP$GIT_BUILD_DIR/t/helper$PATH_SEP$PATH
 	GIT_EXEC_PATH=${GIT_TEST_EXEC_PATH:-$GIT_EXEC_PATH}
 else # normal case, use ../bin-wrappers only unless $with_dashes:
 	git_bin_dir="$GIT_BUILD_DIR/bin-wrappers"
@@ -905,11 +919,11 @@ else # normal case, use ../bin-wrappers only unless $with_dashes:
 		fi
 		with_dashes=t
 	fi
-	PATH="$git_bin_dir:$PATH"
+	PATH="$git_bin_dir$PATH_SEP$PATH"
 	GIT_EXEC_PATH=$GIT_BUILD_DIR
 	if test -n "$with_dashes"
 	then
-		PATH="$GIT_BUILD_DIR:$PATH"
+		PATH="$GIT_BUILD_DIR$PATH_SEP$PATH"
 	fi
 fi
 GIT_TEMPLATE_DIR="$GIT_BUILD_DIR"/templates/blt
@@ -947,7 +961,6 @@ case "$TRASH_DIRECTORY" in
 /*) ;; # absolute path is good
  *) TRASH_DIRECTORY="$TEST_OUTPUT_DIRECTORY/$TRASH_DIRECTORY" ;;
 esac
-test ! -z "$debug" || remove_trash=$TRASH_DIRECTORY
 rm -fr "$TRASH_DIRECTORY" || {
 	GIT_EXIT_OK=t
 	echo >&5 "FATAL: Cannot prepare test area"
@@ -998,20 +1011,33 @@ yes () {
 uname_s=$(uname -s)
 case $uname_s in
 *MINGW*)
-	# Windows has its own (incompatible) sort and find
-	sort () {
-		/usr/bin/sort "$@"
-	}
-	find () {
-		/usr/bin/find "$@"
-	}
+	if test -x /usr/bin/sort
+	then
+		# Windows has its own (incompatible) sort; override
+		sort () {
+			/usr/bin/sort "$@"
+		}
+	fi
+	if test -x /usr/bin/find
+	then
+		# Windows has its own (incompatible) find; override
+		find () {
+			/usr/bin/find "$@"
+		}
+	fi
 	sum () {
 		md5sum "$@"
 	}
-	# git sees Windows-style pwd
-	pwd () {
-		builtin pwd -W
-	}
+	# On Windows, Git wants Windows paths. But /usr/bin/pwd spits out
+	# Unix-style paths. At least in Bash, we have a builtin pwd that
+	# understands the -W option to force "mixed" paths, i.e. with drive
+	# prefix but still with forward slashes. Let's use that, if available.
+	if type builtin >/dev/null 2>&1
+	then
+		pwd () {
+			builtin pwd -W
+		}
+	fi
 	# no POSIX permissions
 	# backslashes in pathspec are converted to '/'
 	# exec does not inherit the PID
@@ -1019,7 +1045,13 @@ case $uname_s in
 	test_set_prereq NATIVE_CRLF
 	test_set_prereq SED_STRIPS_CR
 	test_set_prereq GREP_STRIPS_CR
-	GIT_TEST_CMP=mingw_test_cmp
+	GIT_TEST_CMP="test-helper --cmp"
+	if ! type iconv >/dev/null 2>&1
+	then
+		iconv () {
+			test-helper --iconv "$@"
+		}
+	fi
 	;;
 *CYGWIN*)
 	test_set_prereq POSIXPERM
@@ -1037,8 +1069,9 @@ esac
 
 ( COLUMNS=1 && test $COLUMNS = 1 ) && test_set_prereq COLUMNS_CAN_BE_1
 test -z "$NO_PERL" && test_set_prereq PERL
+test -z "$NO_PTHREADS" && test_set_prereq PTHREADS
 test -z "$NO_PYTHON" && test_set_prereq PYTHON
-test -n "$USE_LIBPCRE" && test_set_prereq LIBPCRE
+test -n "$USE_LIBPCRE1$USE_LIBPCRE2" && test_set_prereq PCRE
 test -z "$NO_GETTEXT" && test_set_prereq GETTEXT
 
 # Can we rely on git's output in the C locale?
@@ -1178,6 +1211,10 @@ test_lazy_prereq UNZIP '
 	test $? -ne 127
 '
 
+test_lazy_prereq BUSYBOX '
+	case "$($SHELL --help 2>&1)" in *BusyBox*) true;; *) false;; esac
+'
+
 run_with_limited_cmdline () {
 	(ulimit -s 128 && "$@")
 }
@@ -1192,3 +1229,6 @@ build_option () {
 test_lazy_prereq LONG_IS_64BIT '
 	test 8 -le "$(build_option sizeof-long)"
 '
+
+test_lazy_prereq TIME_IS_64BIT 'test-date is64bit'
+test_lazy_prereq TIME_T_IS_64BIT 'test-date time_t-is64bit'

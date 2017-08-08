@@ -22,6 +22,8 @@
 #include "parse-options.h"
 #include "unpack-trees.h"
 #include "cache-tree.h"
+#include "submodule.h"
+#include "submodule-config.h"
 #include "strbuf.h"
 #include "quote.h"
 #include "dir.h"
@@ -89,7 +91,7 @@ static int reset_index(const struct object_id *oid, int reset_type, int quiet)
 		return -1;
 
 	if (reset_type == MIXED || reset_type == HARD) {
-		tree = parse_tree_indirect(oid->hash);
+		tree = parse_tree_indirect(oid);
 		prime_cache_tree(&the_index, tree);
 	}
 
@@ -192,7 +194,7 @@ static int read_from_tree(const struct pathspec *pathspec,
 	opt.format_callback = update_index_from_diff;
 	opt.format_callback_data = &intent_to_add;
 
-	if (do_diff_cache(tree_oid->hash, &opt))
+	if (do_diff_cache(tree_oid, &opt))
 		return 1;
 	diffcore_std(&opt);
 	diff_flush(&opt);
@@ -274,7 +276,6 @@ static void parse_args(struct pathspec *pathspec,
 
 	parse_pathspec(pathspec, 0,
 		       PATHSPEC_PREFER_FULL |
-		       PATHSPEC_STRIP_SUBMODULE_SLASH_CHEAP |
 		       (patch_mode ? PATHSPEC_PREFIX_ORIGIN : 0),
 		       prefix, argv);
 }
@@ -300,6 +301,14 @@ static int reset_refs(const char *rev, const struct object_id *oid)
 				       UPDATE_REFS_MSG_ON_ERR);
 	strbuf_release(&msg);
 	return update_ref_status;
+}
+
+static int git_reset_config(const char *var, const char *value, void *cb)
+{
+	if (!strcmp(var, "submodule.recurse"))
+		return git_default_submodule_config(var, value, cb);
+
+	return git_default_config(var, value, cb);
 }
 
 static int run_pre_reset_hook(int reset_type, const char **argv)
@@ -336,6 +345,9 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 				N_("reset HEAD, index and working tree"), MERGE),
 		OPT_SET_INT(0, "keep", &reset_type,
 				N_("reset HEAD but keep local changes"), KEEP),
+		{ OPTION_CALLBACK, 0, "recurse-submodules", NULL,
+			    "reset", "control recursive updating of submodules",
+			    PARSE_OPT_OPTARG, option_parse_recurse_submodules_worktree_updater },
 		OPT_BOOL('p', "patch", &patch_mode, N_("select hunks interactively")),
 		OPT_BOOL('N', "intent-to-add", &intent_to_add,
 				N_("record only the fact that removed paths will be added later")),
@@ -346,11 +358,13 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		OPT_END()
 	};
 
-	git_config(git_default_config, NULL);
+	git_config(git_reset_config, NULL);
 
 	argc = parse_options(argc, argv, prefix, options, git_reset_usage,
 						PARSE_OPT_KEEP_DASHDASH);
 	parse_args(&pathspec, argv, prefix, patch_mode, &rev);
+
+	load_submodule_cache();
 
 	if (run_pre_reset_hook(reset_type, argv))
 		die("pre-reset hook aborted command");
@@ -358,8 +372,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	if (read_from_stdin) {
 		strbuf_getline_fn getline_fn = nul_term_line ?
 			strbuf_getline_nul : strbuf_getline;
-		int flags = PATHSPEC_PREFER_FULL |
-			PATHSPEC_STRIP_SUBMODULE_SLASH_CHEAP;
+		int flags = PATHSPEC_PREFER_FULL;
 		struct strbuf buf = STRBUF_INIT;
 		struct strbuf unquoted = STRBUF_INIT;
 
@@ -400,7 +413,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		struct commit *commit;
 		if (get_sha1_committish(rev, oid.hash))
 			die(_("Failed to resolve '%s' as a valid revision."), rev);
-		commit = lookup_commit_reference(oid.hash);
+		commit = lookup_commit_reference(&oid);
 		if (!commit)
 			die(_("Could not parse object '%s'."), rev);
 		oidcpy(&oid, &commit->object.oid);
@@ -408,7 +421,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		struct tree *tree;
 		if (get_sha1_treeish(rev, oid.hash))
 			die(_("Failed to resolve '%s' as a valid tree."), rev);
-		tree = parse_tree_indirect(oid.hash);
+		tree = parse_tree_indirect(&oid);
 		if (!tree)
 			die(_("Could not parse object '%s'."), rev);
 		oidcpy(&oid, &tree->object.oid);
@@ -477,7 +490,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		update_ref_status = reset_refs(rev, &oid);
 
 		if (reset_type == HARD && !update_ref_status && !quiet)
-			print_new_head_line(lookup_commit_reference(oid.hash));
+			print_new_head_line(lookup_commit_reference(&oid));
 	}
 	if (!pathspec.nr)
 		remove_branch_state();

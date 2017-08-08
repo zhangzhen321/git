@@ -291,6 +291,29 @@ static int http_options(const char *var, const char *value, void *cb)
 		curl_ssl_try = git_config_bool(var, value);
 		return 0;
 	}
+#if LIBCURL_VERSION_NUM >= 0x073800 || \
+		defined(CURL_WITH_EXPERIMENTAL_SSL_BACKEND_SUPPORT)
+	if (!strcmp("http.sslbackend", var)) {
+		const curl_ssl_backend **backends;
+		struct strbuf buf = STRBUF_INIT;
+		int i;
+
+		switch (curl_global_sslset(-1, value, &backends)) {
+		case CURLSSLSET_UNKNOWN_BACKEND:
+			strbuf_addf(&buf, _("Unsupported SSL backend '%s'. "
+					    "Supported SSL backends:"), value);
+			for (i = 0; backends[i]; i++)
+				strbuf_addf(&buf, "\n\t%s", backends[i]->name);
+			die(buf.buf);
+		case CURLSSLSET_TOO_LATE:
+			die(_("Could not set SSL backend to '%s': already set"),
+			    value);
+		case CURLSSLSET_OK:
+			break; /* Okay! */
+		}
+	}
+#endif
+
 	if (!strcmp("http.minsessions", var)) {
 		min_curl_sessions = git_config_int(var, value);
 #ifndef USE_CURL_MULTI
@@ -1027,8 +1050,7 @@ void http_cleanup(void)
 
 	if (proxy_auth.password) {
 		memset(proxy_auth.password, 0, strlen(proxy_auth.password));
-		free(proxy_auth.password);
-		proxy_auth.password = NULL;
+		FREE_AND_NULL(proxy_auth.password);
 	}
 
 	free((void *)curl_proxyuserpwd);
@@ -1039,13 +1061,11 @@ void http_cleanup(void)
 
 	if (cert_auth.password != NULL) {
 		memset(cert_auth.password, 0, strlen(cert_auth.password));
-		free(cert_auth.password);
-		cert_auth.password = NULL;
+		FREE_AND_NULL(cert_auth.password);
 	}
 	ssl_cert_password_required = 0;
 
-	free(cached_accept_language);
-	cached_accept_language = NULL;
+	FREE_AND_NULL(cached_accept_language);
 }
 
 struct active_request_slot *get_active_slot(void)
@@ -1897,8 +1917,7 @@ static char *fetch_pack_index(unsigned char *sha1, const char *base_url)
 
 	if (http_get_file(url, tmp, NULL) != HTTP_OK) {
 		error("Unable to get pack index %s", url);
-		free(tmp);
-		tmp = NULL;
+		FREE_AND_NULL(tmp);
 	}
 
 	free(url);
@@ -2329,8 +2348,7 @@ void release_http_object_request(struct http_object_request *freq)
 		freq->localfile = -1;
 	}
 	if (freq->url != NULL) {
-		free(freq->url);
-		freq->url = NULL;
+		FREE_AND_NULL(freq->url);
 	}
 	if (freq->slot != NULL) {
 		freq->slot->callback_func = NULL;

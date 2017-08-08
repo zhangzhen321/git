@@ -180,7 +180,8 @@ void setup_unpack_trees_porcelain(struct unpack_trees_options *opts,
 static unsigned int(*pathhash)(const char *path);
 static int(*pathcmp)(const char *a, const char *b, size_t len);
 
-static int path_hashmap_cmp(const void *a, const void *b, const void *key)
+static int path_hashmap_cmp(const void *unused_cmp_data,
+		const void *a, const void *b, const void *key)
 {
 	const struct exclude *e1 = a;
 	const struct exclude *e2 = b;
@@ -265,14 +266,18 @@ static int check_submodule_move_head(const struct cache_entry *ce,
 				     const char *new_id,
 				     struct unpack_trees_options *o)
 {
+	unsigned flags = SUBMODULE_MOVE_HEAD_DRY_RUN;
 	const struct submodule *sub = submodule_from_ce(ce);
 	if (!sub)
 		return 0;
 
+	if (o->reset)
+		flags |= SUBMODULE_MOVE_HEAD_FORCE;
+
 	switch (sub->update_strategy.type) {
 	case SM_UPDATE_UNSPECIFIED:
 	case SM_UPDATE_CHECKOUT:
-		if (submodule_move_head(ce->name, old_id, new_id, SUBMODULE_MOVE_HEAD_DRY_RUN))
+		if (submodule_move_head(ce->name, old_id, new_id, flags))
 			return o->gently ? -1 :
 				add_rejected_path(o, ERROR_WOULD_LOSE_SUBMODULE, ce->name);
 		return 0;
@@ -321,6 +326,7 @@ static void unlink_entry(const struct cache_entry *ce)
 		case SM_UPDATE_CHECKOUT:
 		case SM_UPDATE_REBASE:
 		case SM_UPDATE_MERGE:
+			/* state.force is set at the caller. */
 			submodule_move_head(ce->name, "HEAD", NULL,
 					    SUBMODULE_MOVE_HEAD_FORCE);
 			break;
@@ -1083,7 +1089,7 @@ static int clear_ce_flags_dir(struct cache_entry **cache, int nr,
 	struct cache_entry **cache_end;
 	int dtype = DT_DIR;
 	int ret = is_excluded_from_list(prefix->buf, prefix->len,
-					basename, &dtype, el);
+					basename, &dtype, el, &the_index);
 	int rc;
 
 	strbuf_addch(prefix, '/');
@@ -1248,7 +1254,7 @@ next:
 		/* Non-directory */
 		dtype = ce_to_dtype(ce);
 		ret = is_excluded_from_list(ce->name, ce_namelen(ce),
-					    name, &dtype, el);
+					    name, &dtype, el, &the_index);
 		if (ret < 0)
 			ret = defval;
 		if (ret > 0)
@@ -1304,7 +1310,7 @@ static void mark_new_skip_worktree(struct exclude_list *el,
 		pathhash = ignore_case ? strihash : strhash;
 		pathcmp = ignore_case ? strnicmp : strncmp;
 
-		hashmap_init(&el->pattern_hash, path_hashmap_cmp, el->nr);
+		hashmap_init(&el->pattern_hash, path_hashmap_cmp, NULL, el->nr);
 
 		for (i = el->nr - 1; 0 <= i; i--) {
 			struct exclude *x = el->excludes[i];
@@ -1344,7 +1350,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 		o->skip_sparse_checkout = 1;
 	if (!o->skip_sparse_checkout) {
 		char *sparse = git_pathdup("info/sparse-checkout");
-		if (add_excludes_from_file_to_list(sparse, "", 0, &el, 0) < 0)
+		if (add_excludes_from_file_to_list(sparse, "", 0, &el, NULL) < 0)
 			o->skip_sparse_checkout = 1;
 		else
 			o->el = &el;
@@ -1686,7 +1692,7 @@ static int verify_clean_subdirectory(const struct cache_entry *ce,
 	memset(&d, 0, sizeof(d));
 	if (o->dir)
 		d.exclude_per_dir = o->dir->exclude_per_dir;
-	i = read_directory(&d, pathbuf, namelen+1, NULL);
+	i = read_directory(&d, &the_index, pathbuf, namelen+1, NULL);
 	if (i)
 		return o->gently ? -1 :
 			add_rejected_path(o, ERROR_NOT_UPTODATE_DIR, ce->name);
@@ -1728,7 +1734,7 @@ static int check_ok_to_remove(const char *name, int len, int dtype,
 		return 0;
 
 	if (o->dir &&
-	    is_excluded(o->dir, name, &dtype))
+	    is_excluded(o->dir, &the_index, name, &dtype))
 		/*
 		 * ce->name is explicitly excluded, so it is Ok to
 		 * overwrite it.

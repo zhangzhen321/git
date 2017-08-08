@@ -8,6 +8,7 @@
 #include "../cache.h"
 #include "win32/exit-process.h"
 #include "../config.h"
+#include "../string-list.h"
 
 #define HCAST(type, handle) ((type)(intptr_t)handle)
 
@@ -595,6 +596,8 @@ FILE *mingw_fopen (const char *filename, const char *otype)
 		return NULL;
 	}
 	file = _wfopen(wfilename, wotype);
+	if (!file && GetLastError() == ERROR_INVALID_NAME)
+		errno = ENOENT;
 	if (file && hide && set_hidden_flag(wfilename, 1))
 		warning("could not mark '%s' as hidden.", filename);
 	return file;
@@ -1124,7 +1127,7 @@ static const char *quote_arg_msvc(const char *arg)
 
 #include "quote.h"
 
-static const char *quote_arg_sh(const char *arg)
+static const char *quote_arg_msys2(const char *arg)
 {
 	struct strbuf buf = STRBUF_INIT;
 	const char *p2 = arg, *p;
@@ -1189,67 +1192,15 @@ static const char *parse_interpreter(const char *cmd)
 }
 
 /*
- * Splits the PATH into parts.
- */
-static char **get_path_split(void)
-{
-	char *p, **path, *envpath = mingw_getenv("PATH");
-	int i, n = 0;
-
-	if (!envpath || !*envpath)
-		return NULL;
-
-	envpath = xstrdup(envpath);
-	p = envpath;
-	while (p) {
-		char *dir = p;
-		p = strchr(p, ';');
-		if (p) *p++ = '\0';
-		if (*dir) {	/* not earlier, catches series of ; */
-			++n;
-		}
-	}
-	if (!n) {
-		free(envpath);
-		return NULL;
-	}
-
-	ALLOC_ARRAY(path, n + 1);
-	p = envpath;
-	i = 0;
-	do {
-		if (*p)
-			path[i++] = xstrdup(p);
-		p = p+strlen(p)+1;
-	} while (i < n);
-	path[i] = NULL;
-
-	free(envpath);
-
-	return path;
-}
-
-static void free_path_split(char **path)
-{
-	char **p = path;
-
-	if (!path)
-		return;
-
-	while (*p)
-		free(*p++);
-	free(path);
-}
-
-/*
  * exe_only means that we only want to detect .exe files, but not scripts
  * (which do not have an extension)
  */
-static char *lookup_prog(const char *dir, const char *cmd, int isexe, int exe_only)
+static char *lookup_prog(const char *dir, int dirlen, const char *cmd,
+			 int isexe, int exe_only)
 {
 	char path[MAX_PATH];
 	wchar_t wpath[MAX_PATH];
-	snprintf(path, sizeof(path), "%s\\%s.exe", dir, cmd);
+	snprintf(path, sizeof(path), "%.*s\\%s.exe", dirlen, dir, cmd);
 
 	if (xutftowcs_path(wpath, path) < 0)
 		return NULL;
@@ -1266,21 +1217,95 @@ static char *lookup_prog(const char *dir, const char *cmd, int isexe, int exe_on
 	return NULL;
 }
 
+static char *path_lookup(const char *cmd, int exe_only);
+
+static char *is_busybox_applet(const char *cmd)
+{
+	static struct string_list applets = STRING_LIST_INIT_DUP;
+	static char *busybox_path;
+	static int busybox_path_initialized;
+
+	/* Avoid infinite loop */
+	if (!strncasecmp(cmd, "busybox", 7) &&
+	    (!cmd[7] || !strcasecmp(cmd + 7, ".exe")))
+		return NULL;
+
+	if (!busybox_path_initialized) {
+		busybox_path = path_lookup("busybox.exe", 1);
+		busybox_path_initialized = 1;
+	}
+
+	/* Assume that sh is compiled in... */
+	if (!busybox_path || !strcasecmp(cmd, "sh"))
+		return xstrdup_or_null(busybox_path);
+
+	if (!applets.nr) {
+		struct child_process cp = CHILD_PROCESS_INIT;
+		struct strbuf buf = STRBUF_INIT;
+		char *p;
+
+		argv_array_pushl(&cp.args, busybox_path, "--help", NULL);
+
+		if (capture_command(&cp, &buf, 2048)) {
+			string_list_append(&applets, "");
+			return NULL;
+		}
+
+		/* parse output */
+		p = strstr(buf.buf, "Currently defined functions:\n");
+		if (!p) {
+			warning("Could not parse output of busybox --help");
+			string_list_append(&applets, "");
+			return NULL;
+		}
+		p = strchrnul(p, '\n');
+		for (;;) {
+			size_t len;
+
+			p += strspn(p, "\n\t ,");
+			len = strcspn(p, "\n\t ,");
+			if (!len)
+				break;
+			p[len] = '\0';
+			string_list_insert(&applets, p);
+			p = p + len + 1;
+		}
+	}
+
+	return string_list_has_string(&applets, cmd) ?
+		xstrdup(busybox_path) : NULL;
+}
+
 /*
  * Determines the absolute path of cmd using the split path in path.
  * If cmd contains a slash or backslash, no lookup is performed.
  */
-static char *path_lookup(const char *cmd, char **path, int exe_only)
+static char *path_lookup(const char *cmd, int exe_only)
 {
+	const char *path;
 	char *prog = NULL;
 	int len = strlen(cmd);
 	int isexe = len >= 4 && !strcasecmp(cmd+len-4, ".exe");
 
 	if (strchr(cmd, '/') || strchr(cmd, '\\'))
-		prog = xstrdup(cmd);
+		return xstrdup(cmd);
 
-	while (!prog && *path)
-		prog = lookup_prog(*path++, cmd, isexe, exe_only);
+	path = mingw_getenv("PATH");
+	if (!path)
+		return NULL;
+
+	while (!prog) {
+		const char *sep = strchrnul(path, ';');
+		int dirlen = sep - path;
+		if (dirlen)
+			prog = lookup_prog(path, dirlen, cmd, isexe, exe_only);
+		if (!*sep)
+			break;
+		path = sep + 1;
+	}
+
+	if (!prog && !isexe)
+		prog = is_busybox_applet(cmd);
 
 	return prog;
 }
@@ -1566,9 +1591,37 @@ static void kill_child_processes_on_signal(void)
 	LeaveCriticalSection(&pinfo_cs);
 }
 
+static int is_msys2_sh(const char *cmd)
+{
+	if (cmd && !strcmp(cmd, "sh")) {
+		static int ret = -1;
+		char *p;
+
+		if (ret >= 0)
+			return ret;
+
+		p = path_lookup(cmd, 0);
+		if (!p)
+			ret = 0;
+		else {
+			size_t len = strlen(p);
+			ret = len > 15 &&
+				is_dir_sep(p[len - 15]) &&
+				!strncasecmp(p + len - 14, "usr", 3) &&
+				is_dir_sep(p[len - 11]) &&
+				!strncasecmp(p + len - 10, "bin", 3) &&
+				is_dir_sep(p[len - 7]) &&
+				!strcasecmp(p + len - 6, "sh.exe");
+			free(p);
+		}
+		return ret;
+	}
+	return 0;
+}
+
 static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaenv,
-			      const char *dir,
-			      int prepend_cmd, int fhin, int fhout, int fherr)
+			      const char *dir, const char *prepend_cmd,
+			      int fhin, int fhout, int fherr)
 {
 	static int atexit_handler_initialized;
 	STARTUPINFOW si;
@@ -1580,7 +1633,7 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 	HANDLE cons;
 	const char *strace_env;
 	const char *(*quote_arg)(const char *arg) =
-		*argv && !strcmp("sh", *argv) ? quote_arg_sh : quote_arg_msvc;
+		is_msys2_sh(*argv) ? quote_arg_msys2 : quote_arg_msvc;
 
 	if (!atexit_handler_initialized) {
 		atexit_handler_initialized = 1;
@@ -1637,9 +1690,9 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 	/* concatenate argv, quoting args as we go */
 	strbuf_init(&args, 0);
 	if (prepend_cmd) {
-		char *quoted = (char *)quote_arg(cmd);
+		char *quoted = (char *)quote_arg(prepend_cmd);
 		strbuf_addstr(&args, quoted);
-		if (quoted != cmd)
+		if (quoted != prepend_cmd)
 			free(quoted);
 	}
 	for (; *argv; argv++) {
@@ -1653,13 +1706,9 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 
 	strace_env = getenv("GIT_STRACE_COMMANDS");
 	if (strace_env) {
-		char **path = get_path_split();
-		char *p = path_lookup("strace.exe", path, 1);
-		if (!p) {
-			free_path_split(path);
+		char *p = path_lookup("strace.exe", 1);
+		if (!p)
 			return error("strace not found!");
-		}
-		free_path_split(path);
 		if (xutftowcs_path(wcmd, p) < 0) {
 			free(p);
 			return -1;
@@ -1720,7 +1769,8 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 	return (pid_t)pi.dwProcessId;
 }
 
-static pid_t mingw_spawnv(const char *cmd, const char **argv, int prepend_cmd)
+static pid_t mingw_spawnv(const char *cmd, const char **argv,
+			  const char *prepend_cmd)
 {
 	return mingw_spawnve_fd(cmd, argv, NULL, NULL, prepend_cmd, 0, 1, 2);
 }
@@ -1730,8 +1780,7 @@ pid_t mingw_spawnvpe(const char *cmd, const char **argv, char **deltaenv,
 		     int fhin, int fhout, int fherr)
 {
 	pid_t pid;
-	char **path = get_path_split();
-	char *prog = path_lookup(cmd, path, 0);
+	char *prog = path_lookup(cmd, 0);
 
 	if (!prog) {
 		errno = ENOENT;
@@ -1742,39 +1791,36 @@ pid_t mingw_spawnvpe(const char *cmd, const char **argv, char **deltaenv,
 
 		if (interpr) {
 			const char *argv0 = argv[0];
-			char *iprog = path_lookup(interpr, path, 1);
+			char *iprog = path_lookup(interpr, 1);
 			argv[0] = prog;
 			if (!iprog) {
 				errno = ENOENT;
 				pid = -1;
 			}
 			else {
-				pid = mingw_spawnve_fd(iprog, argv, deltaenv, dir, 1,
+				pid = mingw_spawnve_fd(iprog, argv, deltaenv, dir, interpr,
 						       fhin, fhout, fherr);
 				free(iprog);
 			}
 			argv[0] = argv0;
 		}
 		else
-			pid = mingw_spawnve_fd(prog, argv, deltaenv, dir, 0,
+			pid = mingw_spawnve_fd(prog, argv, deltaenv, dir, NULL,
 					       fhin, fhout, fherr);
 		free(prog);
 	}
-	free_path_split(path);
 	return pid;
 }
 
 static int try_shell_exec(const char *cmd, char *const *argv)
 {
 	const char *interpr = parse_interpreter(cmd);
-	char **path;
 	char *prog;
 	int pid = 0;
 
 	if (!interpr)
 		return 0;
-	path = get_path_split();
-	prog = path_lookup(interpr, path, 1);
+	prog = path_lookup(interpr, 1);
 	if (prog) {
 		int argc = 0;
 #ifndef _MSC_VER
@@ -1785,7 +1831,7 @@ static int try_shell_exec(const char *cmd, char *const *argv)
 		ALLOC_ARRAY(argv2, argc + 1);
 		argv2[0] = (char *)cmd;	/* full path to the script file */
 		memcpy(&argv2[1], &argv[1], sizeof(*argv) * argc);
-		pid = mingw_spawnv(prog, argv2, 1);
+		pid = mingw_spawnv(prog, argv2, interpr);
 		if (pid >= 0) {
 			int status;
 			if (waitpid(pid, &status, 0) < 0)
@@ -1796,7 +1842,6 @@ static int try_shell_exec(const char *cmd, char *const *argv)
 		free(prog);
 		free(argv2);
 	}
-	free_path_split(path);
 	return pid;
 }
 
@@ -1806,7 +1851,7 @@ int mingw_execv(const char *cmd, char *const *argv)
 	if (!try_shell_exec(cmd, argv)) {
 		int pid, status;
 
-		pid = mingw_spawnv(cmd, (const char **)argv, 0);
+		pid = mingw_spawnv(cmd, (const char **)argv, NULL);
 		if (pid < 0)
 			return -1;
 		if (waitpid(pid, &status, 0) < 0)
@@ -1818,8 +1863,7 @@ int mingw_execv(const char *cmd, char *const *argv)
 
 int mingw_execvp(const char *cmd, char *const *argv)
 {
-	char **path = get_path_split();
-	char *prog = path_lookup(cmd, path, 0);
+	char *prog = path_lookup(cmd, 0);
 
 	if (prog) {
 		mingw_execv(prog, argv);
@@ -1827,7 +1871,6 @@ int mingw_execvp(const char *cmd, char *const *argv)
 	} else
 		errno = ENOENT;
 
-	free_path_split(path);
 	return -1;
 }
 
