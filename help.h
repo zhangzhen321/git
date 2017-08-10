@@ -39,10 +39,10 @@ extern void help_unknown_ref(const char *ref, const char *cmd, const char *error
  */
 #ifndef GIT_BUILD_PLATFORM
 	#if defined __x86__ || defined __i386__ || defined __i586__ || defined __i686__
-		#define GIT_BUILD_PLATFORM "x86";
+		#define GIT_BUILD_PLATFORM "x86"
 	#elif defined __x86_64__
-		#define GIT_BUILD_PLATFORM "x86_64";
+		#define GIT_BUILD_PLATFORM "x86_64"
 	#else
-		#define GIT_BUILD_PLATFORM "unknown";
+		#define GIT_BUILD_PLATFORM "unknown"
 	#endif
 #endif
