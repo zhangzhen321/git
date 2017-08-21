@@ -5,11 +5,11 @@ REM using the GIT-SDK command line tools.
 REM        $ make
 REM        $ make MSVC=1
 REM
-REM GIT-SDK BASH windows inherit environment varibles with all of
+REM GIT-SDK BASH windows inherit environment variables with all of
 REM the bin/lib/include paths for GCC.  It DOES NOT inherit values
 REM for the corresponding MSVC tools.
 REM
-REM During normal (non-git) Windows development, you launche one
+REM During normal (non-git) Windows development, you launch one
 REM of the provided "developer command prompts" to set environment
 REM variables for the MSVC tools.
 REM
@@ -25,7 +25,7 @@ REM
 REM The output of this script should be written to a make "include
 REM file" and referenced by the top-level Makefile.
 REM
-REM See "config.mak.uname"
+REM See "config.mak.uname" (look for GIT-MSVC-GEN).
 REM ================================================================
 REM The provided command prompts are custom to each VS release and
 REM filled with lots of internal knowledge (such as Registry settings);
@@ -63,7 +63,7 @@ REM ================================================================
 
 REM Sanitize PATH to prevent git-sdk paths from confusing "wmic.exe"
 REM (called internally in some of the system BAT files).
-SET PATH=C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;
+SET PATH=%SystemRoot%\system32;%SystemRoot%;%SystemRoot%\System32\Wbem;
 
 REM ================================================================
 
