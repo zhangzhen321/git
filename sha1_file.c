@@ -350,6 +350,7 @@ static int alt_odb_usable(struct strbuf *path, const char *normalized_objdir)
  * SHA1, an extra slash for the first level indirection, and the
  * terminating NUL.
  */
+static void read_info_alternates(const char * relative_base, int depth);
 static int link_alt_odb_entry(const char *entry, const char *relative_base,
 	int depth, const char *normalized_objdir)
 {
@@ -451,7 +452,7 @@ static void link_alt_odb_entries(const char *alt, int len, int sep,
 	strbuf_release(&objdirbuf);
 }
 
-void read_info_alternates(const char * relative_base, int depth)
+static void read_info_alternates(const char * relative_base, int depth)
 {
 	char *map;
 	size_t mapsz;
@@ -662,66 +663,16 @@ struct read_object_process {
 
 int start_read_object_fn(struct subprocess_entry *subprocess)
 {
-	int err;
 	struct read_object_process *entry = (struct read_object_process *)subprocess;
-	struct child_process *process = &subprocess->process;
-	struct string_list cap_list = STRING_LIST_INIT_NODUP;
-	const char *cmd = subprocess->cmd;
-	char *cap_buf;
-	const char *cap_name;
+	static int versions[] = {1, 0};
+	static struct subprocess_capability capabilities[] = {
+		{ "get", CAP_GET },
+		{ NULL, 0 }
+	};
 
-	sigchain_push(SIGPIPE, SIG_IGN);
-
-	err = packet_writel(process->in, "git-read-object-client", "version=1", NULL);
-	if (err)
-		goto done;
-
-	err = strcmp(packet_read_line(process->out, NULL), "git-read-object-server");
-	if (err) {
-		error("external process '%s' does not support read-object protocol version 1", cmd);
-		goto done;
-	}
-	err = strcmp(packet_read_line(process->out, NULL), "version=1");
-	if (err)
-		goto done;
-	err = packet_read_line(process->out, NULL) != NULL;
-	if (err)
-		goto done;
-
-	err = packet_writel(process->in, "capability=get", NULL);
-	if (err)
-		goto done;
-
-	for (;;) {
-		cap_buf = packet_read_line(process->out, NULL);
-		if (!cap_buf)
-			break;
-		string_list_split_in_place(&cap_list, cap_buf, '=', 1);
-
-		if (cap_list.nr != 2 || strcmp(cap_list.items[0].string, "capability"))
-			continue;
-
-		cap_name = cap_list.items[1].string;
-		if (!strcmp(cap_name, "get")) {
-			entry->supported_capabilities |= CAP_GET;
-		}
-		else {
-			warning(
-				"external process '%s' requested unsupported read-object capability '%s'",
-				cmd, cap_name
-			);
-		}
-
-		string_list_clear(&cap_list, 0);
-	}
-
-done:
-	sigchain_pop(SIGPIPE);
-
-	if (err || errno == EPIPE)
-		return err ? err : errno;
-
-	return 0;
+	return subprocess_handshake(subprocess, "git-read-object", versions,
+				    NULL, capabilities,
+				    &entry->supported_capabilities);
 }
 
 static int read_object_process(const unsigned char *sha1)
@@ -2717,8 +2668,8 @@ void *unpack_entry(struct packed_git *p, off_t obj_offset,
 				error("bad packed object CRC for %s",
 				      sha1_to_hex(sha1));
 				mark_bad_packed_object(p, sha1);
-				unuse_pack(&w_curs);
-				return NULL;
+				data = NULL;
+				goto out;
 			}
 		}
 
@@ -2856,6 +2807,7 @@ void *unpack_entry(struct packed_git *p, off_t obj_offset,
 	if (final_size)
 		*final_size = size;
 
+out:
 	unuse_pack(&w_curs);
 
 	if (delta_stack != small_delta_stack)
@@ -2974,7 +2926,7 @@ off_t find_pack_entry_one(const unsigned char *sha1,
 		return nth_packed_object_offset(p, pos);
 	}
 
-	do {
+	while (lo < hi) {
 		unsigned mi = (lo + hi) / 2;
 		int cmp = hashcmp(index + mi * stride, sha1);
 
@@ -2987,7 +2939,7 @@ off_t find_pack_entry_one(const unsigned char *sha1,
 			hi = mi;
 		else
 			lo = mi+1;
-	} while (lo < hi);
+	}
 	return 0;
 }
 

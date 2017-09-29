@@ -768,6 +768,9 @@ static int checkout(int submodule_progress)
 		if (submodule_progress)
 			argv_array_push(&args, "--progress");
 
+		if (option_verbosity < 0)
+			argv_array_push(&args, "--quiet");
+
 		err = run_command_v_opt(args.argv, RUN_GIT_CMD);
 		argv_array_clear(&args);
 	}
@@ -881,6 +884,8 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 
 	struct refspec *refspec;
 	const char *fetch_pattern;
+
+	git_config(platform_core_config, NULL);
 
 	packet_trace_identity("clone");
 	argc = parse_options(argc, argv, prefix, builtin_clone_options,
