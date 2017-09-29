@@ -373,11 +373,14 @@ static int cmd_log_walk(struct rev_info *rev)
 			 */
 			rev->max_count++;
 		if (!rev->reflog_info) {
-			/* we allow cycles in reflog ancestry */
+			/*
+			 * We may show a given commit multiple times when
+			 * walking the reflogs.
+			 */
 			free_commit_buffer(commit);
+			free_commit_list(commit->parents);
+			commit->parents = NULL;
 		}
-		free_commit_list(commit->parents);
-		commit->parents = NULL;
 		if (saved_nrl < rev->diffopt.needed_rename_limit)
 			saved_nrl = rev->diffopt.needed_rename_limit;
 		if (rev->diffopt.degraded_cc_to_c)
@@ -1888,6 +1891,7 @@ int cmd_cherry(int argc, const char **argv, const char *prefix)
 		OPT_END()
 	};
 
+	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, options, cherry_usage, 0);
 
 	switch (argc) {

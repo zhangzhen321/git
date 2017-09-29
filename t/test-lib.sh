@@ -1025,9 +1025,6 @@ case $uname_s in
 			/usr/bin/find "$@"
 		}
 	fi
-	sum () {
-		md5sum "$@"
-	}
 	# On Windows, Git wants Windows paths. But /usr/bin/pwd spits out
 	# Unix-style paths. At least in Bash, we have a builtin pwd that
 	# understands the -W option to force "mixed" paths, i.e. with drive

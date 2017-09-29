@@ -174,6 +174,24 @@ int refname_is_safe(const char *refname)
 	return 1;
 }
 
+/*
+ * Return true if refname, which has the specified oid and flags, can
+ * be resolved to an object in the database. If the referred-to object
+ * does not exist, emit a warning and return false.
+ */
+int ref_resolves_to_object(const char *refname,
+			   const struct object_id *oid,
+			   unsigned int flags)
+{
+	if (flags & REF_ISBROKEN)
+		return 0;
+	if (!has_sha1_file(oid->hash)) {
+		error("%s does not point to a valid object!", refname);
+		return 0;
+	}
+	return 1;
+}
+
 char *refs_resolve_refdup(struct ref_store *refs,
 			  const char *refname, int resolve_flags,
 			  unsigned char *sha1, int *flags)
@@ -1147,7 +1165,7 @@ int parse_hide_refs_config(const char *var, const char *value, const char *secti
 		}
 		string_list_append(hide_refs, ref);
 	}
-	return 0;
+	return git_default_config(var, value, NULL);
 }
 
 int ref_is_hidden(const char *refname, const char *refname_full)
@@ -1160,7 +1178,7 @@ int ref_is_hidden(const char *refname, const char *refname_full)
 		const char *match = hide_refs->items[i].string;
 		const char *subject;
 		int neg = 0;
-		int len;
+		const char *p;
 
 		if (*match == '!') {
 			neg = 1;
@@ -1175,10 +1193,9 @@ int ref_is_hidden(const char *refname, const char *refname_full)
 		}
 
 		/* refname can be NULL when namespaces are used. */
-		if (!subject || !starts_with(subject, match))
-			continue;
-		len = strlen(match);
-		if (!subject[len] || subject[len] == '/')
+		if (subject &&
+		    skip_prefix(subject, match, &p) &&
+		    (!*p || *p == '/'))
 			return !neg;
 	}
 	return 0;

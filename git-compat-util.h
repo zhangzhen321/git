@@ -394,7 +394,7 @@ typedef uintmax_t timestamp_t;
 #endif
 
 #ifndef platform_core_config
-static inline int noop_core_config(const char *var, const char *value)
+static inline int noop_core_config(const char *var, const char *value, void *cb)
 {
 	return 0;
 }
@@ -897,6 +897,14 @@ static inline void copy_array(void *dst, const void *src, size_t n, size_t size)
 {
 	if (n)
 		memcpy(dst, src, st_mult(size, n));
+}
+
+#define MOVE_ARRAY(dst, src, n) move_array((dst), (src), (n), sizeof(*(dst)) + \
+	BUILD_ASSERT_OR_ZERO(sizeof(*(dst)) == sizeof(*(src))))
+static inline void move_array(void *dst, const void *src, size_t n, size_t size)
+{
+	if (n)
+		memmove(dst, src, st_mult(size, n));
 }
 
 /*
