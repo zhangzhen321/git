@@ -53,12 +53,16 @@ GIT_BUILD_DIR="$TEST_DIRECTORY"/..
 : ${ASAN_OPTIONS=detect_leaks=0:abort_on_error=1}
 export ASAN_OPTIONS
 
+# If LSAN is in effect we _do_ want leak checking, but we still
+# want to abort so that we notice the problems.
+: ${LSAN_OPTIONS=abort_on_error=1}
+export LSAN_OPTIONS
+
 if test ! -f "$GIT_BUILD_DIR"/GIT-BUILD-OPTIONS
 then
 	echo >&2 'error: GIT-BUILD-OPTIONS missing (has Git been built?).'
 	exit 1
 fi
-
 . "$GIT_BUILD_DIR"/GIT-BUILD-OPTIONS
 export PERL_PATH SHELL_PATH
 
@@ -115,7 +119,6 @@ EDITOR=:
 unset VISUAL EMAIL LANGUAGE COLUMNS $(env | sed -n \
 	-e '/^GIT_TRACE/d' \
 	-e '/^GIT_DEBUG/d' \
-	-e '/^GIT_USE_LOOKUP/d' \
 	-e '/^GIT_TEST/d' \
 	-e '/^GIT_.*_TEST/d' \
 	-e '/^GIT_PROVE/d' \
@@ -288,7 +291,7 @@ then
 	test -z "$verbose" && verbose_only="$valgrind_only"
 elif test -n "$valgrind"
 then
-	verbose=t
+	test -z "$verbose_log" && verbose=t
 fi
 
 if test -n "$color"
@@ -1109,14 +1112,8 @@ test_i18ngrep () {
 
 test_lazy_prereq PIPE '
 	# test whether the filesystem supports FIFOs
-	case $(uname -s) in
-	CYGWIN*|MINGW*)
-		false
-		;;
-	*)
-		rm -f testfifo && mkfifo testfifo
-		;;
-	esac
+	test_have_prereq !MINGW,!CYGWIN &&
+	rm -f testfifo && mkfifo testfifo
 '
 
 test_lazy_prereq SYMLINKS '
@@ -1216,7 +1213,19 @@ run_with_limited_cmdline () {
 	(ulimit -s 128 && "$@")
 }
 
-test_lazy_prereq CMDLINE_LIMIT 'run_with_limited_cmdline true'
+test_lazy_prereq CMDLINE_LIMIT '
+	test_have_prereq !MINGW,!CYGWIN &&
+	run_with_limited_cmdline true
+'
+
+run_with_limited_stack () {
+	(ulimit -s 128 && "$@")
+}
+
+test_lazy_prereq ULIMIT_STACK_SIZE '
+	test_have_prereq !MINGW,!CYGWIN &&
+	run_with_limited_stack true
+'
 
 build_option () {
 	git version --build-options |

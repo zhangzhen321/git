@@ -452,6 +452,10 @@ poll (struct pollfd *pfd, nfds_t nfd, int timeout)
 	    pfd[i].revents = happened;
 	    rc++;
 	  }
+	else
+	  {
+	    pfd[i].revents = 0;
+	  }
       }
 
   return rc;

@@ -1028,7 +1028,7 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 	struct exclude *exc = NULL; /* undecided */
 	int i;
 
-	if (el->pattern_hash.size) {
+	if (el->pattern_hash.tablesize) {
 		/*
 		 * We cannot search for every possible rule that matches the
 		 * current path because there are countless odd permutations
@@ -1506,17 +1506,26 @@ static enum path_treatment treat_directory(struct dir_struct *dir,
 			break;
 		if (exclude &&
 			(dir->flags & DIR_SHOW_IGNORED_TOO) &&
-			(dir->flags & DIR_SHOW_IGNORED_DIRECTORY)) {
+			(dir->flags & DIR_SHOW_IGNORED_TOO_MODE_MATCHING)) {
 
 			/*
-			 * This is an excluded directory, and we are only
-			 * showing the name of a excluded directory.
-			 * Check to see if there are any contained files
-			 * to determine if the directory is empty or not.
+			 * This is an excluded directory and we are
+			 * showing ignored paths that match an exclude
+			 * pattern.  (e.g. show directory as ignored
+			 * only if it matches an exclude pattern).
+			 * This path will either be 'path_excluded`
+			 * (if we are showing empty directories or if
+			 * the directory is not empty), or will be
+			 * 'path_none' (empty directory, and we are
+			 * not showing empty directories).
 			 */
-			if (read_directory_recursive(dir, istate, dirname, len,
-				untracked, 1, 1, pathspec) == path_excluded)
+			if (!(dir->flags & DIR_HIDE_EMPTY_DIRECTORIES))
 				return path_excluded;
+
+			if (read_directory_recursive(dir, istate, dirname, len,
+						     untracked, 1, 1, pathspec) == path_excluded)
+				return path_excluded;
+
 			return path_none;
 		}
 		if (!(dir->flags & DIR_NO_GITLINKS)) {
@@ -1528,15 +1537,20 @@ static enum path_treatment treat_directory(struct dir_struct *dir,
 	}
 
 	/* This is the "show_other_directories" case */
+
 	if (!(dir->flags & DIR_HIDE_EMPTY_DIRECTORIES))
 		return exclude ? path_excluded : path_untracked;
 
 	untracked = lookup_untracked(dir->untracked, untracked,
 				     dirname + baselen, len - baselen);
-	return read_directory_recursive(dir, istate, dirname, len,
-					untracked, 1, 0, pathspec);
-}
 
+	/*
+	 * If this is an excluded directory, then we only need to check if
+	 * the directory contains any files.
+	 */
+	return read_directory_recursive(dir, istate, dirname, len,
+					untracked, 1, exclude, pathspec);
+}
 
 /*
  * This is an inexact early pruning of any recursive directory
@@ -1686,6 +1700,7 @@ static enum path_treatment treat_one_path(struct dir_struct *dir,
 {
 	int exclude;
 	int has_path_in_index = !!index_file_exists(istate, path->buf, path->len, ignore_case);
+	enum path_treatment path_treatment;
 
 	if (dtype == DT_UNKNOWN)
 		dtype = get_dtype(de, istate, path->buf, path->len);
@@ -1733,8 +1748,23 @@ static enum path_treatment treat_one_path(struct dir_struct *dir,
 		return path_none;
 	case DT_DIR:
 		strbuf_addch(path, '/');
-		return treat_directory(dir, istate, untracked, path->buf, path->len,
-				       baselen, exclude, pathspec);
+		path_treatment = treat_directory(dir, istate, untracked,
+						 path->buf, path->len,
+						 baselen, exclude, pathspec);
+		/*
+		 * If 1) we only want to return directories that
+		 * match an exclude pattern and 2) this directory does
+		 * not match an exclude pattern but all of its
+		 * contents are excluded, then indicate that we should
+		 * recurse into this directory (instead of marking the
+		 * directory itself as an ignored path).
+		 */
+		if (!exclude &&
+		    path_treatment == path_excluded &&
+		    (dir->flags & DIR_SHOW_IGNORED_TOO) &&
+		    (dir->flags & DIR_SHOW_IGNORED_TOO_MODE_MATCHING))
+			return path_recurse;
+		return path_treatment;
 	case DT_REG:
 	case DT_LNK:
 		return exclude ? path_excluded : path_untracked;
@@ -1924,8 +1954,16 @@ static void close_cached_dir(struct cached_dir *cdir)
  * Also, we ignore the name ".git" (even if it is not a directory).
  * That likely will not change.
  *
+ * If 'stop_at_first_file' is specified, 'path_excluded' is returned
+ * to signal that a file was found. This is the least significant value that
+ * indicates that a file was encountered that does not depend on the order of
+ * whether an untracked or exluded path was encountered first.
+ *
  * Returns the most significant path_treatment value encountered in the scan.
+ * If 'stop_at_first_file' is specified, `path_excluded` is the most
+ * significant path_treatment value that will be returned.
  */
+
 static enum path_treatment read_directory_recursive(struct dir_struct *dir,
 	struct index_state *istate, const char *base, int baselen,
 	struct untracked_cache_dir *untracked, int check_only,
@@ -1972,19 +2010,21 @@ static enum path_treatment read_directory_recursive(struct dir_struct *dir,
 		if (check_only) {
 			if (stop_at_first_file) {
 				/*
-				 * In general, if we are stopping at the first found file,
-				 * We can only signal that a path of at least "excluded" was
-				 * found. If the first file we find is "excluded" - there might
-				 * be other untracked files later on that will not be searched.
+				 * If stopping at first file, then
+				 * signal that a file was found by
+				 * returning `path_excluded`. This is
+				 * to return a consistent value
+				 * regardless of whether an ignored or
+				 * excluded file happened to be
+				 * encountered 1st.
 				 *
-				 * In current usage of this function, stop_at_first_file will
-				 * only be set when called from a directory that matches the
-				 * exclude pattern - there should be no untracked files -
-				 * all contents should be marked as excluded.
+				 * In current usage, the
+				 * `stop_at_first_file` is passed when
+				 * an ancestor directory has matched
+				 * an exclude pattern, so any found
+				 * files will be excluded.
 				 */
-				if (dir_state == path_excluded)
-					break;
-				else if (dir_state > path_excluded) {
+				if (dir_state >= path_excluded) {
 					dir_state = path_excluded;
 					break;
 				}

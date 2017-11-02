@@ -98,7 +98,7 @@ int ignore_untracked_cache_config;
 /* This is set by setup_git_dir_gently() and/or git_default_config() */
 char *git_work_tree_cfg;
 
-static const char *namespace;
+static char *namespace;
 
 static const char *super_prefix;
 
@@ -153,8 +153,10 @@ void setup_git_env(void)
 	if (getenv(NO_REPLACE_OBJECTS_ENVIRONMENT))
 		check_replace_refs = 0;
 	replace_ref_base = getenv(GIT_REPLACE_REF_BASE_ENVIRONMENT);
+	free(git_replace_ref_base);
 	git_replace_ref_base = xstrdup(replace_ref_base ? replace_ref_base
 							  : "refs/replace/");
+	free(namespace);
 	namespace = expand_namespace(getenv(GIT_NAMESPACE_ENVIRONMENT));
 	shallow_file = getenv(GIT_SHALLOW_FILE_ENVIRONMENT);
 	if (shallow_file)
@@ -336,4 +338,9 @@ int get_shared_repository(void)
 void reset_shared_repository(void)
 {
 	need_shared_repository_from_config = 1;
+}
+
+int use_optional_locks(void)
+{
+	return git_env_bool(GIT_OPTIONAL_LOCKS_ENVIRONMENT, 1);
 }
