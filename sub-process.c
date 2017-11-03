@@ -6,10 +6,13 @@
 #include "pkt-line.h"
 
 int cmd2process_cmp(const void *unused_cmp_data,
-		    const struct subprocess_entry *e1,
-		    const struct subprocess_entry *e2,
+		    const void *entry,
+		    const void *entry_or_key,
 		    const void *unused_keydata)
 {
+	const struct subprocess_entry *e1 = entry;
+	const struct subprocess_entry *e2 = entry_or_key;
+
 	return strcmp(e1->cmd, e2->cmd);
 }
 
@@ -74,13 +77,12 @@ int subprocess_start(struct hashmap *hashmap, struct subprocess_entry *entry, co
 {
 	int err;
 	struct child_process *process;
-	const char *argv[] = { cmd, NULL };
 
 	entry->cmd = cmd;
 	process = &entry->process;
 
 	child_process_init(process);
-	process->argv = argv;
+	argv_array_push(&process->args, cmd);
 	process->use_shell = 1;
 	process->in = -1;
 	process->out = -1;
@@ -181,8 +183,8 @@ static int handshake_capabilities(struct child_process *process,
 			if (supported_capabilities)
 				*supported_capabilities |= capabilities[i].flag;
 		} else {
-			warning("subprocess '%s' requested unsupported capability '%s'",
-				process->argv[0], p);
+			die("subprocess '%s' requested unsupported capability '%s'",
+			    process->argv[0], p);
 		}
 	}
 

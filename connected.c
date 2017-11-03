@@ -3,6 +3,7 @@
 #include "sigchain.h"
 #include "connected.h"
 #include "transport.h"
+#include "packfile.h"
 #include "gvfs.h"
 
 /*

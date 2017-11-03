@@ -26,20 +26,28 @@
 #include "gvfs.h"
 
 struct path_hashmap_entry {
-	struct hashmap_entry entry;
+	struct hashmap_entry e;
 	char path[FLEX_ARRAY];
 };
 
-static unsigned int (*pathhash)(const char *path);
-static int (*pathcmp)(const char *a, const char *b);
-
-static int path_hashmap_cmp(const void *unused_cmp_data,
-		const void *a, const void *b, const void *key)
+static int path_hashmap_cmp(const void *cmp_data,
+			    const void *entry,
+			    const void *entry_or_key,
+			    const void *keydata)
 {
-	const struct path_hashmap_entry *one = a;
-	const struct path_hashmap_entry *two = b;
+	const struct path_hashmap_entry *a = entry;
+	const struct path_hashmap_entry *b = entry_or_key;
+	const char *key = keydata;
 
-	return pathcmp(one->path, two->path);
+	if (ignore_case)
+		return strcasecmp(a->path, key ? key : b->path);
+	else
+		return strcmp(a->path, key ? key : b->path);
+}
+
+static unsigned int path_hash(const char *path)
+{
+	return ignore_case ? strihash(path) : strhash(path);
 }
 
 static void flush_output(struct merge_options *o)
@@ -336,14 +344,13 @@ static int save_files_dirs(const unsigned char *sha1,
 		unsigned int mode, int stage, void *context)
 {
 	struct path_hashmap_entry *entry;
-
 	int baselen = base->len;
 	struct merge_options *o = context;
 
 	strbuf_addstr(base, path);
 
 	FLEX_ALLOC_MEM(entry, path, base->buf, base->len);
-	hashmap_entry_init(entry, pathhash(entry->path));
+	hashmap_entry_init(entry, path_hash(entry->path));
 	hashmap_add(&o->current_file_dir_set, entry);
 
 	strbuf_setlen(base, baselen);
@@ -673,17 +680,15 @@ static char *unique_path(struct merge_options *o, const char *path, const char *
 	add_flattened_path(&newpath, branch);
 
 	base_len = newpath.len;
-	FLEX_ALLOC_MEM(entry, path, newpath.buf, newpath.len);
-	hashmap_entry_init(entry, pathhash(entry->path));
-	while (hashmap_get(&o->current_file_dir_set, entry, NULL) ||
+	while (hashmap_get_from_hash(&o->current_file_dir_set,
+				     path_hash(newpath.buf), newpath.buf) ||
 	       (!o->call_depth && file_exists(newpath.buf))) {
 		strbuf_setlen(&newpath, base_len);
 		strbuf_addf(&newpath, "_%d", suffix++);
-		free(entry);
-		FLEX_ALLOC_MEM(entry, path, newpath.buf, newpath.len);
-		hashmap_entry_init(entry, pathhash(entry->path));
 	}
 
+	FLEX_ALLOC_MEM(entry, path, newpath.buf, newpath.len);
+	hashmap_entry_init(entry, path_hash(entry->path));
 	hashmap_add(&o->current_file_dir_set, entry);
 	return strbuf_detach(&newpath, NULL);
 }
@@ -1950,7 +1955,7 @@ int merge_trees(struct merge_options *o,
 	}
 
 	if (oid_eq(&common->object.oid, &merge->object.oid)) {
-		output(o, 0, _("Already up-to-date!"));
+		output(o, 0, _("Already up to date!"));
 		*result = head;
 		return 1;
 	}
@@ -1968,10 +1973,14 @@ int merge_trees(struct merge_options *o,
 	if (unmerged_cache()) {
 		struct string_list *entries, *re_head, *re_merge;
 		int i;
-
-		hashmap_init(&o->current_file_dir_set, path_hashmap_cmp,
-			     NULL, 512);
-
+		/*
+		 * Only need the hashmap while processing entries, so
+		 * initialize it here and free it when we are done running
+		 * through the entries. Keeping it in the merge_options as
+		 * opposed to decaring a local hashmap is for convenience
+		 * so that we don't have to pass it to around.
+		 */
+		hashmap_init(&o->current_file_dir_set, path_hashmap_cmp, NULL, 512);
 		get_files_dirs(o, head);
 		get_files_dirs(o, merge);
 
@@ -1980,10 +1989,8 @@ int merge_trees(struct merge_options *o,
 		re_head  = get_renames(o, head, common, head, merge, entries);
 		re_merge = get_renames(o, merge, common, head, merge, entries);
 		clean = process_renames(o, re_head, re_merge);
-		if (clean < 0) {
+		if (clean < 0)
 			goto cleanup;
-		}
-
 		for (i = entries->nr-1; 0 <= i; i--) {
 			const char *path = entries->items[i].string;
 			struct stage_data *e = entries->items[i].util;
@@ -2214,10 +2221,6 @@ void init_merge_options(struct merge_options *o)
 	if (o->verbosity >= 5)
 		o->buffer_output = 0;
 	strbuf_init(&o->obuf, 0);
-
-	pathhash = ignore_case ? strihash : strhash;
-	pathcmp = ignore_case ? strcasecmp : strcmp;
-
 	string_list_init(&o->df_conflict_file_set, 1);
 }
 
