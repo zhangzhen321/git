@@ -122,6 +122,7 @@ struct rev_info {
 			ancestry_path:1,
 			first_parent_only:1,
 			line_level_traverse:1,
+			tree_blobs_in_commit_order:1,
 
 			/* for internal use only */
 			exclude_promisor_objects:1;
