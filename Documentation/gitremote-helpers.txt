@@ -468,6 +468,10 @@ set by Git if the remote helper has the 'option' capability.
 
 TODO document 'option from-promisor' and 'option no-haves' ?
 
+'option filter <filter-spec>'::
+	An object filter specification for partial clone or fetch
+	as described in rev-list.
+
 SEE ALSO
 --------
 linkgit:git-remote[1]

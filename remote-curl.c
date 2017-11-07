@@ -13,6 +13,7 @@
 #include "credential.h"
 #include "sha1-array.h"
 #include "send-pack.h"
+#include "list-objects-filter-options.h"
 
 static struct remote *remote;
 /* always ends with a trailing slash */
@@ -22,6 +23,7 @@ struct options {
 	int verbosity;
 	unsigned long depth;
 	char *deepen_since;
+	char *partial_clone_filter;
 	struct string_list deepen_not;
 	struct string_list push_options;
 	unsigned progress : 1,
@@ -163,11 +165,12 @@ static int set_option(const char *name, const char *value)
 	} else if (!strcmp(name, "from-promisor")) {
 		options.from_promisor = 1;
 		return 0;
-
 	} else if (!strcmp(name, "no-haves")) {
 		options.no_haves = 1;
 		return 0;
-
+	} else if (!strcmp(name, "filter")) {
+		options.partial_clone_filter = xstrdup(value);
+		return 0;
 	} else {
 		return 1 /* unsupported */;
 	}
@@ -837,6 +840,9 @@ static int fetch_git(struct discovery *heads,
 		argv_array_push(&args, "--from-promisor");
 	if (options.no_haves)
 		argv_array_push(&args, "--no-haves");
+	if (options.partial_clone_filter)
+		argv_array_pushf(&args, "--%s=%s",
+				 CL_ARG__FILTER, options.partial_clone_filter);
 	argv_array_push(&args, url.buf);
 
 	for (i = 0; i < nr_heads; i++) {

@@ -82,6 +82,7 @@ static int verbose;
 static int show_resolving_progress;
 static int show_stat;
 static int check_self_contained_and_connected;
+static int arg_promisor_given;
 
 static struct progress *progress;
 
@@ -222,6 +223,17 @@ static unsigned check_object(struct object *obj)
 	if (!(obj->flags & FLAG_CHECKED)) {
 		unsigned long size;
 		int type = sha1_object_info(obj->oid.hash, &size);
+
+		if (type <= 0 && arg_promisor_given) {
+			/*
+			 * Assume this missing object is promised.  We can't
+			 * confirm it because we are indexing the packfile
+			 * that omitted it.
+			 */
+			obj->flags |= FLAG_CHECKED;
+			return 0;
+		}
+
 		if (type <= 0)
 			die(_("did not receive expected object %s"),
 			      oid_to_hex(&obj->oid));
@@ -1707,8 +1719,10 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 				keep_msg = arg + 7;
 			} else if (!strcmp(arg, "--promisor")) {
 				promisor_msg = "";
+				arg_promisor_given = 1;
 			} else if (starts_with(arg, "--promisor=")) {
 				promisor_msg = arg + strlen("--promisor=");
+				arg_promisor_given = 1;
 			} else if (starts_with(arg, "--threads=")) {
 				char *end;
 				nr_threads = strtoul(arg+10, &end, 0);
