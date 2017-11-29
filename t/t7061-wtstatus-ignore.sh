@@ -278,10 +278,7 @@ EOF
 
 test_expect_success 'status ignores submodule in excluded directory' '
 	git init tracked/submodule &&
-	(
-		cd tracked/submodule &&
-		test_commit initial
-	) &&
+	test_commit -C tracked/submodule initial &&
 	git status --porcelain --ignored -u tracked/submodule >actual &&
 	test_cmp expected actual
 '

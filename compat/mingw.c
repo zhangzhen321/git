@@ -3202,7 +3202,7 @@ static void maybe_redirect_std_handle(const wchar_t *key, DWORD std_id, int fd,
 				      DWORD desired_access, DWORD flags)
 {
 	DWORD create_flag = fd ? OPEN_ALWAYS : OPEN_EXISTING;
-	wchar_t buf[MAX_LONG_PATH];
+	wchar_t buf[MAX_PATH];
 	DWORD max = ARRAY_SIZE(buf);
 	HANDLE handle;
 	DWORD ret = GetEnvironmentVariableW(key, buf, max);
