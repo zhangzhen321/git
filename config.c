@@ -2168,6 +2168,22 @@ int git_config_get_max_percent_split_change(void)
 	return -1; /* default value */
 }
 
+int git_config_get_virtualprojection(void)
+{
+	if (git_config_get_pathname("core.virtualProjection", &core_virtualprojection))
+		core_virtualprojection = getenv("GIT_VIRTUALPROJECTION_TEST");
+
+	if (core_virtualprojection && !*core_virtualprojection)
+		core_virtualprojection = NULL;
+
+	if (core_virtualprojection) {
+		core_apply_sparse_checkout = 1;
+		return 1;
+	}
+
+	return 0;
+}
+
 NORETURN
 void git_die_config_linenr(const char *key, const char *filename, int linenr)
 {

@@ -19,6 +19,7 @@
 #include "varint.h"
 #include "split-index.h"
 #include "utf8.h"
+#include "virtualprojection.h"
 #include "gvfs.h"
 
 #ifndef NO_PTHREADS
@@ -1766,6 +1767,7 @@ static void post_read_index_from(struct index_state *istate)
 	check_ce_order(istate);
 	tweak_untracked_cache(istate);
 	tweak_split_index(istate);
+	apply_virtualprojection(istate);
 }
 
 /* remember to discard_cache() before reading a different cache! */
