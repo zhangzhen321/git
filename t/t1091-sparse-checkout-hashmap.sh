@@ -41,7 +41,7 @@ test_expect_success 'merge feature branch into sparse checkout of master' '
 
 test_expect_success 'return to full checkout of master' '
 	git checkout feature &&
-	echo "//" >.git/info/sparse-checkout &&
+	echo "/*" >.git/info/sparse-checkout &&
 	git checkout master &&
 	test_path_is_file a &&
 	test_path_is_file b &&
